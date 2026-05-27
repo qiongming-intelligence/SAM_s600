@@ -45,7 +45,12 @@ endif()
 
 if(SAM_S600_ENABLE_HOBOT AND EXISTS "/usr/include/hobot/dnn/hb_dnn.h" AND EXISTS "/usr/hobot/lib/libdnn.so")
     target_compile_definitions(sam_s600 PRIVATE SAM_S600_HAS_HOBOT_DNN=1)
-    target_link_libraries(sam_s600 PRIVATE /usr/hobot/lib/libdnn.so)
+    target_link_libraries(sam_s600 PUBLIC /usr/hobot/lib/libdnn.so)
+endif()
+
+if(SAM_S600_ENABLE_HOBOT AND EXISTS "/usr/hobot/include/hb_bpu_mem.h" AND EXISTS "/usr/hobot/lib/libbpu.so")
+    target_compile_definitions(sam_s600 PRIVATE SAM_S600_HAS_HOBOT_BPU_MEM=1)
+    target_link_libraries(sam_s600 PUBLIC /usr/hobot/lib/libbpu.so)
 endif()
 
 if(SAM_S600_BUILD_APPS)
@@ -58,4 +63,9 @@ endif()
 
 if(SAM_S600_BUILD_TESTS)
     enable_testing()
+
+    add_executable(bpu_allocator_smoke tests/bpu_allocator_smoke.cpp)
+    target_link_libraries(bpu_allocator_smoke PRIVATE sam_s600::sam_s600)
+    target_apply_sam_s600_warnings(bpu_allocator_smoke)
+    add_test(NAME bpu_allocator_smoke COMMAND bpu_allocator_smoke)
 endif()
