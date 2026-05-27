@@ -11,13 +11,14 @@
 #include "sam_s600/bpu/bpu_model.hpp"
 #include "sam_s600/core/tensor.hpp"
 #include "sam_s600/sam3/sam3_manifest.hpp"
+#include "sam_s600/sam3/sam3_model.hpp"
 #include "sam_s600/sam3/sam3_request.hpp"
 
 namespace {
 
 void PrintUsage(const char* app) {
   std::cout << "usage: " << app
-            << " [--manifest path] [--check-models]"
+            << " [--manifest path] [--check-models] [--load-parts] [--require-all]"
                " [--image path | --input path | --url rtsp-url | --camera device]"
                " [--text prompt] [--point x,y[,label]] [--box x0,y0,x1,y1]"
                " [--mask path] [--exemplar path] [--inspect-part hbm-path]\n";
@@ -26,6 +27,8 @@ void PrintUsage(const char* app) {
 struct CliOptions {
   std::string manifest_path;
   bool check_models{false};
+  bool load_parts{false};
+  bool require_all{false};
   std::string inspect_part_path;
   sam_s600::Sam3Request request;
 };
@@ -120,6 +123,14 @@ CliOptions ParseOptions(int argc, char** argv, const std::string& fallback) {
     }
     if (arg == "--check-models") {
       options.check_models = true;
+      continue;
+    }
+    if (arg == "--load-parts") {
+      options.load_parts = true;
+      continue;
+    }
+    if (arg == "--require-all") {
+      options.require_all = true;
       continue;
     }
     if (arg == "--inspect-part") {
@@ -265,6 +276,35 @@ void InspectModelPart(const std::string& path) {
   PrintTensorList("outputs", model.Outputs());
 }
 
+
+void PrintPartStatuses(const std::vector<sam_s600::Sam3ModelPartRuntimeStatus>& statuses) {
+  std::cout << "SAM3 partition load status:\n";
+  for (const auto& status : statuses) {
+    std::cout << "  " << status.name << ": ";
+    if (status.loaded) {
+      std::cout << "loaded";
+      if (!status.model_name.empty()) {
+        std::cout << " model=" << status.model_name;
+      }
+      std::cout << " core_num=" << status.compile_bpu_core_num;
+    } else if (!status.exists) {
+      std::cout << "missing";
+    } else {
+      std::cout << "failed";
+      if (!status.error.empty()) {
+        std::cout << " error=" << status.error;
+      }
+    }
+    std::cout << " -> " << status.path << '\n';
+  }
+}
+
+void LoadModelParts(const sam_s600::Sam3Manifest& manifest, bool require_all) {
+  sam_s600::Sam3Model model(manifest.config);
+  model.Load(require_all);
+  PrintPartStatuses(model.PartStatuses());
+}
+
 void PrintModelChecks(const sam_s600::Sam3Config& config) {
   const auto checks = sam_s600::CheckSam3ModelParts(config);
   for (const auto& item : checks) {
@@ -319,6 +359,9 @@ int RunManifestCli(int argc, char** argv, const std::string& default_manifest, c
     PrintRequest(options.request);
     if (options.check_models) {
       PrintModelChecks(manifest.config);
+    }
+    if (options.load_parts) {
+      LoadModelParts(manifest, options.require_all);
     }
     if (!options.inspect_part_path.empty()) {
       InspectModelPart(options.inspect_part_path);
