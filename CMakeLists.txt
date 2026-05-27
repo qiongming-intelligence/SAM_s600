@@ -43,6 +43,11 @@ if(SAM_S600_ENABLE_HOBOT AND EXISTS "/usr/hobot/include")
     target_compile_definitions(sam_s600 PRIVATE SAM_S600_HAS_HOBOT=1)
 endif()
 
+if(SAM_S600_ENABLE_HOBOT AND EXISTS "/usr/include/hobot/dnn/hb_dnn.h" AND EXISTS "/usr/hobot/lib/libdnn.so")
+    target_compile_definitions(sam_s600 PRIVATE SAM_S600_HAS_HOBOT_DNN=1)
+    target_link_libraries(sam_s600 PRIVATE /usr/hobot/lib/libdnn.so)
+endif()
+
 if(SAM_S600_BUILD_APPS)
     foreach(app IN ITEMS sam3_image sam3_image_interactive sam3_video sam3_video_tracking sam3_multiplex_video sam3_camera sam3_rtsp sam3_benchmark)
         add_executable(${app} apps/${app}.cpp apps/cli_common.cpp)

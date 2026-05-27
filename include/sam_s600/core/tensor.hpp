@@ -8,9 +8,20 @@ namespace sam_s600 {
 
 enum class TensorDataType {
   kUnknown,
+  kInt4,
+  kUint4,
+  kInt8,
   kUint8,
-  kInt32,
+  kFloat16,
+  kInt16,
+  kUint16,
   kFloat32,
+  kInt32,
+  kUint32,
+  kFloat64,
+  kInt64,
+  kUint64,
+  kBool8,
 };
 
 struct TensorShape {
@@ -22,6 +33,7 @@ struct TensorInfo {
   TensorShape shape;
   TensorDataType dtype{TensorDataType::kUnknown};
   std::uint64_t byte_size{0};
+  std::vector<std::int64_t> stride;
 };
 
 }  // namespace sam_s600

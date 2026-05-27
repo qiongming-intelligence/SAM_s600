@@ -11,3 +11,14 @@ hrt_model_exec model_info --model_file <model.hbm>
 ```
 
 `hobot-smi` is not used as a project dependency because it targets PAC/PCIe management rather than local SAM3 BPU utilization.
+
+
+## Inspecting converted SAM3 parts
+
+Any converted SAM3 HBM partition can be inspected through the shared CLI helper:
+
+```bash
+sam3_benchmark --inspect-part models/hbm/sam3_image_encoder.hbm
+```
+
+The command prints the model name, compile-time BPU core count, input tensor metadata, and output tensor metadata.

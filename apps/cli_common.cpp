@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "sam_s600/bpu/bpu_model.hpp"
+#include "sam_s600/core/tensor.hpp"
 #include "sam_s600/sam3/sam3_manifest.hpp"
 #include "sam_s600/sam3/sam3_request.hpp"
 
@@ -18,12 +20,13 @@ void PrintUsage(const char* app) {
             << " [--manifest path] [--check-models]"
                " [--image path | --input path | --url rtsp-url | --camera device]"
                " [--text prompt] [--point x,y[,label]] [--box x0,y0,x1,y1]"
-               " [--mask path] [--exemplar path]\n";
+               " [--mask path] [--exemplar path] [--inspect-part hbm-path]\n";
 }
 
 struct CliOptions {
   std::string manifest_path;
   bool check_models{false};
+  std::string inspect_part_path;
   sam_s600::Sam3Request request;
 };
 
@@ -119,6 +122,10 @@ CliOptions ParseOptions(int argc, char** argv, const std::string& fallback) {
       options.check_models = true;
       continue;
     }
+    if (arg == "--inspect-part") {
+      options.inspect_part_path = RequiredValue(i, argc, argv, arg);
+      continue;
+    }
     if (arg == "--image") {
       options.request.input_type = sam_s600::Sam3InputType::kImage;
       options.request.image_path = RequiredValue(i, argc, argv, arg);
@@ -192,6 +199,72 @@ void PrintManifest(const sam_s600::Sam3Manifest& manifest, const std::string& mo
   std::cout << "multiplex: " << (manifest.config.enable_multiplex ? "enabled" : "disabled") << '\n';
 }
 
+
+const char* TensorTypeName(sam_s600::TensorDataType type) {
+  switch (type) {
+    case sam_s600::TensorDataType::kInt4:
+      return "s4";
+    case sam_s600::TensorDataType::kUint4:
+      return "u4";
+    case sam_s600::TensorDataType::kInt8:
+      return "s8";
+    case sam_s600::TensorDataType::kUint8:
+      return "u8";
+    case sam_s600::TensorDataType::kFloat16:
+      return "f16";
+    case sam_s600::TensorDataType::kInt16:
+      return "s16";
+    case sam_s600::TensorDataType::kUint16:
+      return "u16";
+    case sam_s600::TensorDataType::kFloat32:
+      return "f32";
+    case sam_s600::TensorDataType::kInt32:
+      return "s32";
+    case sam_s600::TensorDataType::kUint32:
+      return "u32";
+    case sam_s600::TensorDataType::kFloat64:
+      return "f64";
+    case sam_s600::TensorDataType::kInt64:
+      return "s64";
+    case sam_s600::TensorDataType::kUint64:
+      return "u64";
+    case sam_s600::TensorDataType::kBool8:
+      return "bool8";
+    case sam_s600::TensorDataType::kUnknown:
+      return "unknown";
+  }
+  return "unknown";
+}
+
+void PrintShape(const sam_s600::TensorShape& shape) {
+  std::cout << '(';
+  for (std::size_t i = 0; i < shape.dims.size(); ++i) {
+    if (i != 0) {
+      std::cout << ',';
+    }
+    std::cout << shape.dims[i];
+  }
+  std::cout << ')';
+}
+
+void PrintTensorList(const char* title, const std::vector<sam_s600::TensorInfo>& tensors) {
+  std::cout << title << ":\n";
+  for (const auto& tensor : tensors) {
+    std::cout << "  " << tensor.name << " shape=";
+    PrintShape(tensor.shape);
+    std::cout << " dtype=" << TensorTypeName(tensor.dtype) << " bytes=" << tensor.byte_size << '\n';
+  }
+}
+
+void InspectModelPart(const std::string& path) {
+  sam_s600::BpuModel model(path);
+  std::cout << "inspected_part: " << model.Path() << '\n';
+  std::cout << "model_name: " << model.Name() << '\n';
+  std::cout << "compile_bpu_core_num: " << model.CompileBpuCoreNum() << '\n';
+  PrintTensorList("inputs", model.Inputs());
+  PrintTensorList("outputs", model.Outputs());
+}
+
 void PrintModelChecks(const sam_s600::Sam3Config& config) {
   const auto checks = sam_s600::CheckSam3ModelParts(config);
   for (const auto& item : checks) {
@@ -246,6 +319,9 @@ int RunManifestCli(int argc, char** argv, const std::string& default_manifest, c
     PrintRequest(options.request);
     if (options.check_models) {
       PrintModelChecks(manifest.config);
+    }
+    if (!options.inspect_part_path.empty()) {
+      InspectModelPart(options.inspect_part_path);
     }
     return 0;
   } catch (const std::exception& error) {
