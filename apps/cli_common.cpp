@@ -1,7 +1,10 @@
 #include "cli_common.hpp"
 
+#include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -17,13 +20,14 @@
 #include "sam_s600/sam3/sam3_manifest.hpp"
 #include "sam_s600/sam3/sam3_model.hpp"
 #include "sam_s600/sam3/sam3_request.hpp"
+#include "sam_s600/sam3/sam3_video_predictor.hpp"
 
 namespace {
 
 void PrintUsage(const char* app) {
   std::cout << "usage: " << app
             << " [--manifest path] [--check-models] [--load-parts] [--require-all] [--run]"
-               " [--image path | --input path | --url rtsp-url | --camera device]"
+               " [--image path | --input raw-frame.bin|frames/ | --url rtsp-url | --camera device]"
                " [--text prompt] [--point x,y[,label]] [--box x0,y0,x1,y1]"
                " [--mask path] [--exemplar path] [--inspect-part hbm-path]\n";
 }
@@ -376,6 +380,38 @@ sam_s600::Image ReadRawImageBytes(const std::string& path) {
   return image;
 }
 
+sam_s600::VideoFrame ReadRawVideoFrame(const std::string& path, std::int64_t pts_us) {
+  sam_s600::VideoFrame frame;
+  frame.pts_us = pts_us;
+  frame.image = ReadRawImageBytes(path);
+  return frame;
+}
+
+std::vector<sam_s600::VideoFrame> ReadRawVideoFrames(const std::string& path) {
+  std::vector<std::string> frame_paths;
+  const std::filesystem::path input_path(path);
+  if (std::filesystem::is_directory(input_path)) {
+    for (const auto& entry : std::filesystem::directory_iterator(input_path)) {
+      if (entry.is_regular_file()) {
+        frame_paths.push_back(entry.path().string());
+      }
+    }
+    std::sort(frame_paths.begin(), frame_paths.end());
+    if (frame_paths.empty()) {
+      throw std::runtime_error("video input directory is empty: " + path);
+    }
+  } else {
+    frame_paths.push_back(path);
+  }
+
+  std::vector<sam_s600::VideoFrame> frames;
+  frames.reserve(frame_paths.size());
+  for (std::size_t i = 0; i < frame_paths.size(); ++i) {
+    frames.push_back(ReadRawVideoFrame(frame_paths[i], static_cast<std::int64_t>(i)));
+  }
+  return frames;
+}
+
 void RunImagePredictor(const sam_s600::Sam3Manifest& manifest, const sam_s600::Sam3Request& request, bool require_all) {
   if (request.input_type != sam_s600::Sam3InputType::kImage || request.image_path.empty()) {
     throw std::runtime_error("--run for image mode requires --image raw-input-path");
@@ -386,6 +422,18 @@ void RunImagePredictor(const sam_s600::Sam3Manifest& manifest, const sam_s600::S
   sam_s600::Sam3ImagePredictor predictor(std::move(model));
   const auto result = predictor.Predict(ReadRawImageBytes(request.image_path), request.prompt);
   std::cout << "result_objects: " << result.objects.size() << '\n';
+}
+
+void RunVideoPredictor(const sam_s600::Sam3Manifest& manifest, const sam_s600::Sam3Request& request, bool require_all) {
+  if (request.input_type != sam_s600::Sam3InputType::kVideo || request.video_path.empty()) {
+    throw std::runtime_error("--run for video mode requires --input raw-frame-path-or-directory");
+  }
+
+  sam_s600::Sam3Model model(manifest.config);
+  model.Load(require_all);
+  sam_s600::Sam3VideoPredictor predictor(std::move(model));
+  const auto result = predictor.Predict(ReadRawVideoFrames(request.video_path), request.prompt);
+  std::cout << "result_frames: " << result.frames.size() << '\n';
 }
 
 }  // namespace
@@ -403,10 +451,13 @@ int RunManifestCli(int argc, char** argv, const std::string& default_manifest, c
       LoadModelParts(manifest, options.require_all);
     }
     if (options.run) {
-      if (mode != "sam3_image" && mode != "sam3_image_interactive") {
-        throw std::runtime_error("--run is currently implemented for SAM3 image modes only");
+      if (mode == "sam3_image" || mode == "sam3_image_interactive") {
+        RunImagePredictor(manifest, options.request, options.require_all);
+      } else if (mode == "sam3_video" || mode == "sam3_video_tracking") {
+        RunVideoPredictor(manifest, options.request, options.require_all);
+      } else {
+        throw std::runtime_error("--run is currently implemented for SAM3 image and video modes only");
       }
-      RunImagePredictor(manifest, options.request, options.require_all);
     }
     if (!options.inspect_part_path.empty()) {
       InspectModelPart(options.inspect_part_path);
