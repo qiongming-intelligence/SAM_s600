@@ -21,4 +21,4 @@ sam3_rtsp --url rtsp://example/stream --text "car"
 sam3_camera --camera /dev/video0 --point 320,240,1
 ```
 
-The current pre-alpha CLI validates request wiring and model manifests. Real inference will land after SAM3 video and multiplex subgraph conversion.
+The current pre-alpha CLI validates request wiring and model manifests. The C++ `Sam3VideoPredictor` now validates required SAM3 video partitions (image encoder, detector, mask decoder, memory encoder, tracker) and can run the image encoder on each raw frame whose bytes already match the converted HBM input tensors. Tracker/memory chaining, demuxing, and SAM3.1 multiplex execution will land in following stages.
