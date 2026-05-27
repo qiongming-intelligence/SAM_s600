@@ -214,6 +214,10 @@ std::uint64_t TensorStorageBytes(const TensorInfo& info) {
     return info.byte_size;
   }
 
+  if (!info.stride.empty() && !info.shape.dims.empty() && info.stride[0] > 0 && info.shape.dims[0] >= 0) {
+    return CheckedMul(static_cast<std::uint64_t>(info.stride[0]), static_cast<std::uint64_t>(info.shape.dims[0]));
+  }
+
   const std::uint64_t bits_per_element = DTypeStorageBits(info.dtype);
   if (bits_per_element == 0 || info.shape.dims.empty()) {
     return 0;

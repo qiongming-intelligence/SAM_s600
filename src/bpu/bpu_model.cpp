@@ -5,10 +5,13 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if defined(SAM_S600_HAS_HOBOT_DNN)
 #include <hobot/dnn/hb_dnn.h>
 #include <hobot/dnn/hb_dnn_status.h>
+#include <hobot/hb_ucp.h>
+#include <hobot/hb_ucp_status.h>
 #endif
 
 namespace sam_s600 {
@@ -24,6 +27,12 @@ std::string Basename(const std::string& path) {
 void CheckDnn(int32_t code, const std::string& action) {
   if (code != 0) {
     throw std::runtime_error(action + " failed: " + hbDNNGetErrorDesc(code));
+  }
+}
+
+void CheckUcp(int32_t code, const std::string& action) {
+  if (code != 0) {
+    throw std::runtime_error(action + " failed: " + hbUCPGetErrorDesc(code));
   }
 }
 
@@ -74,6 +83,74 @@ TensorInfo TensorInfoFromDnn(const char* name, const hbDNNTensorProperties& prop
   return info;
 }
 
+std::int64_t AlignStride(std::int64_t value) { return (value + 63) & ~std::int64_t{63}; }
+
+std::int64_t DnnElementBytes(int32_t tensor_type) {
+  switch (ConvertDnnType(tensor_type)) {
+    case TensorDataType::kInt4:
+    case TensorDataType::kUint4:
+    case TensorDataType::kInt8:
+    case TensorDataType::kUint8:
+    case TensorDataType::kBool8:
+      return 1;
+    case TensorDataType::kFloat16:
+    case TensorDataType::kInt16:
+    case TensorDataType::kUint16:
+      return 2;
+    case TensorDataType::kFloat32:
+    case TensorDataType::kInt32:
+    case TensorDataType::kUint32:
+      return 4;
+    case TensorDataType::kFloat64:
+    case TensorDataType::kInt64:
+    case TensorDataType::kUint64:
+      return 8;
+    case TensorDataType::kUnknown:
+      return 1;
+  }
+  return 1;
+}
+
+void NormalizeDynamicStride(hbDNNTensorProperties& properties) {
+  const int32_t dim_count = properties.validShape.numDimensions;
+  for (int32_t i = dim_count - 1; i >= 0; --i) {
+    if (properties.stride[i] != -1) {
+      continue;
+    }
+    if (i + 1 >= dim_count) {
+      properties.stride[i] = DnnElementBytes(properties.tensorType);
+      continue;
+    }
+    properties.stride[i] = AlignStride(properties.stride[i + 1] * properties.validShape.dimensionSize[i + 1]);
+  }
+}
+
+void ValidateTensorBuffers(const std::vector<BpuTensorBuffer>& buffers,
+                           const std::vector<TensorInfo>& expected,
+                           const std::string& kind) {
+  if (buffers.size() != expected.size()) {
+    throw std::runtime_error(kind + " tensor count mismatch");
+  }
+  for (std::size_t i = 0; i < buffers.size(); ++i) {
+    const auto required_bytes = TensorStorageBytes(expected[i]);
+    if (required_bytes != 0 && buffers[i].buffer.Size() < required_bytes) {
+      throw std::runtime_error(kind + " tensor buffer too small: " + expected[i].name);
+    }
+    if (buffers[i].buffer.CpuData() == nullptr) {
+      throw std::runtime_error(kind + " tensor buffer has no CPU address: " + expected[i].name);
+    }
+  }
+}
+
+hbDNNTensor MakeDnnTensor(const BpuTensorBuffer& buffer, const hbDNNTensorProperties& properties) {
+  hbDNNTensor tensor{};
+  tensor.properties = properties;
+  tensor.sysMem.virAddr = buffer.buffer.CpuData();
+  tensor.sysMem.phyAddr = buffer.buffer.PhysicalAddress();
+  tensor.sysMem.memSize = buffer.buffer.Size();
+  return tensor;
+}
+
 #endif
 
 }  // namespace
@@ -82,6 +159,8 @@ struct BpuModel::Impl {
 #if defined(SAM_S600_HAS_HOBOT_DNN)
   hbDNNPackedHandle_t packed_handle{nullptr};
   hbDNNHandle_t model_handle{nullptr};
+  std::vector<hbDNNTensorProperties> input_properties;
+  std::vector<hbDNNTensorProperties> output_properties;
 #endif
 };
 
@@ -142,6 +221,8 @@ void BpuModel::Load(std::string model_path) {
     hbDNNTensorProperties properties{};
     CheckDnn(hbDNNGetInputName(&input_name, impl_->model_handle, i), "hbDNNGetInputName");
     CheckDnn(hbDNNGetInputTensorProperties(&properties, impl_->model_handle, i), "hbDNNGetInputTensorProperties");
+    NormalizeDynamicStride(properties);
+    impl_->input_properties.push_back(properties);
     inputs_.push_back(TensorInfoFromDnn(input_name, properties));
   }
 
@@ -152,6 +233,7 @@ void BpuModel::Load(std::string model_path) {
     hbDNNTensorProperties properties{};
     CheckDnn(hbDNNGetOutputName(&output_name, impl_->model_handle, i), "hbDNNGetOutputName");
     CheckDnn(hbDNNGetOutputTensorProperties(&properties, impl_->model_handle, i), "hbDNNGetOutputTensorProperties");
+    impl_->output_properties.push_back(properties);
     outputs_.push_back(TensorInfoFromDnn(output_name, properties));
   }
 
@@ -170,6 +252,10 @@ void BpuModel::Reset() {
     impl_->packed_handle = nullptr;
     impl_->model_handle = nullptr;
   }
+  if (impl_) {
+    impl_->input_properties.clear();
+    impl_->output_properties.clear();
+  }
 #endif
   inputs_.clear();
   outputs_.clear();
@@ -177,6 +263,57 @@ void BpuModel::Reset() {
   path_.clear();
   name_.clear();
   loaded_ = false;
+}
+
+void BpuModel::Infer(const std::vector<BpuTensorBuffer>& inputs,
+                     std::vector<BpuTensorBuffer>& outputs,
+                     std::int32_t timeout_ms) const {
+  if (!loaded_) {
+    throw std::runtime_error("BPU model is not loaded");
+  }
+
+#if defined(SAM_S600_HAS_HOBOT_DNN)
+  ValidateTensorBuffers(inputs, inputs_, "input");
+  ValidateTensorBuffers(outputs, outputs_, "output");
+
+  std::vector<hbDNNTensor> input_tensors;
+  input_tensors.reserve(inputs.size());
+  for (std::size_t i = 0; i < inputs.size(); ++i) {
+    input_tensors.push_back(MakeDnnTensor(inputs[i], impl_->input_properties[i]));
+    inputs[i].buffer.CleanCache();
+  }
+
+  std::vector<hbDNNTensor> output_tensors;
+  output_tensors.reserve(outputs.size());
+  for (std::size_t i = 0; i < outputs.size(); ++i) {
+    output_tensors.push_back(MakeDnnTensor(outputs[i], impl_->output_properties[i]));
+  }
+
+  hbUCPTaskHandle_t task_handle{nullptr};
+  CheckDnn(hbDNNInferV2(&task_handle, output_tensors.data(), input_tensors.data(), impl_->model_handle), "hbDNNInferV2");
+
+  hbUCPSchedParam sched_param;
+  HB_UCP_INITIALIZE_SCHED_PARAM(&sched_param);
+  sched_param.backend = HB_UCP_BPU_CORE_ANY;
+
+  try {
+    CheckUcp(hbUCPSubmitTask(task_handle, &sched_param), "hbUCPSubmitTask");
+    CheckUcp(hbUCPWaitTaskDone(task_handle, timeout_ms), "hbUCPWaitTaskDone");
+    for (auto& output : outputs) {
+      output.buffer.InvalidateCache();
+    }
+  } catch (...) {
+    hbUCPReleaseTask(task_handle);
+    throw;
+  }
+
+  CheckUcp(hbUCPReleaseTask(task_handle), "hbUCPReleaseTask");
+#else
+  (void)inputs;
+  (void)outputs;
+  (void)timeout_ms;
+  throw std::runtime_error("Hobot DNN runtime is not available");
+#endif
 }
 
 bool BpuModel::Loaded() const { return loaded_; }
@@ -190,6 +327,8 @@ const std::vector<TensorInfo>& BpuModel::Inputs() const { return inputs_; }
 const std::vector<TensorInfo>& BpuModel::Outputs() const { return outputs_; }
 
 std::vector<BpuTensorBuffer> BpuModel::AllocateInputs(BpuAllocationOptions options) const {
+  options.location = BpuMemoryLocation::kCpu;
+  options.cache_mode = BpuCacheMode::kCacheable;
   BpuAllocator allocator;
   std::vector<BpuTensorBuffer> buffers;
   buffers.reserve(inputs_.size());
@@ -200,6 +339,8 @@ std::vector<BpuTensorBuffer> BpuModel::AllocateInputs(BpuAllocationOptions optio
 }
 
 std::vector<BpuTensorBuffer> BpuModel::AllocateOutputs(BpuAllocationOptions options) const {
+  options.location = BpuMemoryLocation::kCpu;
+  options.cache_mode = BpuCacheMode::kCacheable;
   BpuAllocator allocator;
   std::vector<BpuTensorBuffer> buffers;
   buffers.reserve(outputs_.size());

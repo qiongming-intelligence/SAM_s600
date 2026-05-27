@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -22,6 +23,9 @@ class BpuModel {
 
   void Load(std::string model_path);
   void Reset();
+  void Infer(const std::vector<BpuTensorBuffer>& inputs,
+             std::vector<BpuTensorBuffer>& outputs,
+             std::int32_t timeout_ms = 0) const;
 
   [[nodiscard]] bool Loaded() const;
   [[nodiscard]] const std::string& Path() const;
