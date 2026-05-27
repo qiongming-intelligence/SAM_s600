@@ -16,6 +16,7 @@
 
 #include "sam_s600/bpu/bpu_model.hpp"
 #include "sam_s600/core/tensor.hpp"
+#include "sam_s600/multiplex/multiplex_video_predictor.hpp"
 #include "sam_s600/sam3/sam3_image_predictor.hpp"
 #include "sam_s600/sam3/sam3_manifest.hpp"
 #include "sam_s600/sam3/sam3_model.hpp"
@@ -436,6 +437,18 @@ void RunVideoPredictor(const sam_s600::Sam3Manifest& manifest, const sam_s600::S
   std::cout << "result_frames: " << result.frames.size() << '\n';
 }
 
+void RunMultiplexVideoPredictor(const sam_s600::Sam3Manifest& manifest, const sam_s600::Sam3Request& request, bool require_all) {
+  if (request.input_type != sam_s600::Sam3InputType::kVideo || request.video_path.empty()) {
+    throw std::runtime_error("--run for multiplex video mode requires --input raw-frame-path-or-directory");
+  }
+
+  sam_s600::Sam3Model model(manifest.config);
+  model.Load(require_all);
+  sam_s600::Sam3MultiplexVideoPredictor predictor(std::move(model));
+  const auto result = predictor.Predict(ReadRawVideoFrames(request.video_path), request.prompt);
+  std::cout << "result_frames: " << result.frames.size() << '\n';
+}
+
 }  // namespace
 
 int RunManifestCli(int argc, char** argv, const std::string& default_manifest, const std::string& mode) {
@@ -455,8 +468,10 @@ int RunManifestCli(int argc, char** argv, const std::string& default_manifest, c
         RunImagePredictor(manifest, options.request, options.require_all);
       } else if (mode == "sam3_video" || mode == "sam3_video_tracking") {
         RunVideoPredictor(manifest, options.request, options.require_all);
+      } else if (mode == "sam3_multiplex_video") {
+        RunMultiplexVideoPredictor(manifest, options.request, options.require_all);
       } else {
-        throw std::runtime_error("--run is currently implemented for SAM3 image and video modes only");
+        throw std::runtime_error("--run is currently implemented for SAM3 image, video, and multiplex video modes only");
       }
     }
     if (!options.inspect_part_path.empty()) {
