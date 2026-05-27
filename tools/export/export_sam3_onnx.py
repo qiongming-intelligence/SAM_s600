@@ -20,29 +20,61 @@ DTYPES = {
 }
 
 
-def make_contract_module(torch: Any, module: Any, output_count: int) -> Any:
+def tensor_values(output: Any) -> list[Any]:
+    if isinstance(output, dict):
+        values = list(output.values())
+    elif hasattr(output, "to_tuple"):
+        values = list(output.to_tuple())
+    elif isinstance(output, (tuple, list)):
+        values = list(output)
+    else:
+        values = [output]
+    return [value for value in values if hasattr(value, "shape")]
+
+
+def make_contract_module(torch: Any, module: Any, partition_name: str, output_count: int) -> Any:
     class _Wrapper(torch.nn.Module):
-        def __init__(self, wrapped: Any, count: int):
+        def __init__(self, wrapped: Any, name: str, count: int):
             super().__init__()
             self.wrapped = wrapped
+            self.name = name
             self.count = count
 
         def forward(self, *args: Any) -> Any:
+            if self.name == "geometry_encoder":
+                output = self.wrapped(
+                    box_embeddings=args[0],
+                    box_mask=args[1].bool(),
+                    box_labels=args[2].long(),
+                    img_feats=(args[3],),
+                    img_pos_embeds=None,
+                )
+                return output.last_hidden_state, output.attention_mask.to(torch.int32)
+            if self.name == "mask_decoder":
+                output = self.wrapped(
+                    decoder_queries=args[0],
+                    backbone_features=[args[1], args[2], args[3]],
+                    encoder_hidden_states=args[4],
+                    prompt_features=args[5],
+                    prompt_mask=args[6].bool(),
+                )
+                return output.pred_masks, output.semantic_seg
+            if self.name == "detector":
+                output = self.wrapped(
+                    pixel_values=args[0],
+                    input_ids=args[1].long(),
+                    attention_mask=args[2].long(),
+                    input_boxes=args[3],
+                    input_boxes_labels=args[4].long(),
+                )
+                return output.pred_logits, output.pred_boxes, output.pred_masks, output.presence_logits, output.semantic_seg
             output = self.wrapped(*args)
-            if isinstance(output, dict):
-                values = list(output.values())
-            elif hasattr(output, "to_tuple"):
-                values = list(output.to_tuple())
-            elif isinstance(output, (tuple, list)):
-                values = list(output)
-            else:
-                values = [output]
-            values = [value for value in values if hasattr(value, "shape")]
+            values = tensor_values(output)
             if len(values) < self.count:
                 raise RuntimeError(f"partition returned {len(values)} tensor outputs, expected at least {self.count}")
             return tuple(values[: self.count])
 
-    return _Wrapper(module, output_count)
+    return _Wrapper(module, partition_name, output_count)
 
 
 def import_factory(factory: str) -> Any:
@@ -121,11 +153,11 @@ def export_partition(torch: Any, model: Any, contract_path: Path, args: argparse
     onnx_path = Path(contract["onnx_path"])
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
 
-    wrapper = make_contract_module(torch, module, len(output_names))
+    wrapper = make_contract_module(torch, module, str(contract["name"]), len(output_names))
     torch.onnx.export(
         wrapper,
         inputs,
-        onnx_path,
+        str(onnx_path),
         input_names=input_names,
         output_names=output_names,
         opset_version=args.opset,

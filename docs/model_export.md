@@ -145,7 +145,7 @@ PYTHONPATH=tools/export \
   --dry-run
 ```
 
-The default concrete export dimensions are conservative placeholders: image size `1008`, embedding channels `256`, stride `16`, max text/geometry/object/memory tokens `256`, and mask size `256`. Override these with `--image-size`, `--embed-channels`, `--image-stride`, `--max-text-tokens`, `--max-geometry-tokens`, `--max-objects`, `--max-memory-tokens`, and `--mask-size` once the upstream SAM3 export contract is fixed. With the ModelScope `facebook/sam3` download, `text_encoder` and `image_encoder` ONNX export and ONNX checker validation have been verified.
+The default concrete export dimensions are conservative placeholders: image size `1008`, embedding channels `256`, stride `16`, max text/geometry/object/memory tokens `256`, and mask size `256`. Override these with `--image-size`, `--embed-channels`, `--image-stride`, `--max-text-tokens`, `--max-geometry-tokens`, `--max-objects`, `--max-memory-tokens`, and `--mask-size` once the upstream SAM3 export contract is fixed. With the ModelScope `facebook/sam3` download, `image_encoder`, `text_encoder`, `geometry_encoder`, `detector`, `mask_decoder`, and `memory_encoder` ONNX export and ONNX checker validation have been verified. The main Transformers `tracker_model` entrypoint is stateful and requires an `inference_session` object, so it still needs a Tensor-only adapter before ONNX export.
 
 ## HBM conversion
 

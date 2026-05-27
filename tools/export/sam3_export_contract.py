@@ -57,11 +57,15 @@ PARTITIONS: dict[str, PartitionSpec] = {
         onnx_name="sam3_geometry_encoder.onnx",
         hbm_name="sam3_geometry_encoder.hbm",
         inputs=[
-            TensorSpec("points", "float32", ["1", "P", "2"], "prompt_points"),
-            TensorSpec("point_labels", "int32", ["1", "P"], "prompt_points"),
-            TensorSpec("boxes", "float32", ["1", "B", "4"], "prompt_boxes"),
+            TensorSpec("box_embeddings", "float32", ["1", "B", "4"], "prompt_boxes"),
+            TensorSpec("box_mask", "int32", ["1", "B"], "prompt_boxes"),
+            TensorSpec("box_labels", "int32", ["1", "B"], "prompt_boxes"),
+            TensorSpec("image_embeddings", "float32", ["1", "C", "H/stride", "W/stride"], "image_encoder"),
         ],
-        outputs=[TensorSpec("geometry_embeddings", "float16", ["1", "G", "C"], "geometry_encoder")],
+        outputs=[
+            TensorSpec("geometry_embeddings", "float32", ["1", "G", "C"], "geometry_encoder"),
+            TensorSpec("geometry_attention_mask", "int32", ["1", "G"], "geometry_encoder"),
+        ],
     ),
     "detector": PartitionSpec(
         name="detector",
@@ -69,14 +73,18 @@ PARTITIONS: dict[str, PartitionSpec] = {
         onnx_name="sam3_detector.onnx",
         hbm_name="sam3_detector.hbm",
         inputs=[
-            TensorSpec("image_embeddings", "float16", ["1", "C", "H/stride", "W/stride"], "image_encoder"),
-            TensorSpec("text_embeddings", "float16", ["1", "T", "C"], "text_encoder"),
-            TensorSpec("geometry_embeddings", "float16", ["1", "G", "C"], "geometry_encoder"),
+            TensorSpec("pixel_values", "float32", ["1", "3", "H", "W"], "preprocessed_pixel_values"),
+            TensorSpec("input_ids", "int32", ["1", "T"], "tokenizer"),
+            TensorSpec("attention_mask", "int32", ["1", "T"], "tokenizer"),
+            TensorSpec("input_boxes", "float32", ["1", "B", "4"], "prompt_boxes"),
+            TensorSpec("input_boxes_labels", "int32", ["1", "B"], "prompt_boxes"),
         ],
         outputs=[
-            TensorSpec("object_logits", "float16", ["1", "N"], "detector"),
-            TensorSpec("object_boxes", "float16", ["1", "N", "4"], "detector"),
-            TensorSpec("object_tokens", "float16", ["1", "N", "C"], "detector"),
+            TensorSpec("object_logits", "float32", ["1", "N"], "detector"),
+            TensorSpec("object_boxes", "float32", ["1", "N", "4"], "detector"),
+            TensorSpec("mask_logits", "float32", ["1", "N", "Hm", "Wm"], "detector"),
+            TensorSpec("presence_logits", "float32", ["1", "1"], "detector"),
+            TensorSpec("semantic_segmentation", "float32", ["1", "1", "Hm", "Wm"], "detector"),
         ],
     ),
     "mask_decoder": PartitionSpec(
@@ -85,12 +93,17 @@ PARTITIONS: dict[str, PartitionSpec] = {
         onnx_name="sam3_mask_decoder.onnx",
         hbm_name="sam3_mask_decoder.hbm",
         inputs=[
-            TensorSpec("image_embeddings", "float16", ["1", "C", "H/stride", "W/stride"], "image_encoder"),
-            TensorSpec("object_tokens", "float16", ["1", "N", "C"], "detector"),
+            TensorSpec("decoder_queries", "float32", ["1", "N", "C"], "detector"),
+            TensorSpec("backbone_feature_0", "float32", ["1", "C", "H/4", "W/4"], "image_encoder"),
+            TensorSpec("backbone_feature_1", "float32", ["1", "C", "H/8", "W/8"], "image_encoder"),
+            TensorSpec("backbone_feature_2", "float32", ["1", "C", "H/stride", "W/stride"], "image_encoder"),
+            TensorSpec("encoder_hidden_states", "float32", ["1", "H/stride*W/stride", "C"], "detector"),
+            TensorSpec("prompt_features", "float32", ["1", "G", "C"], "geometry_encoder"),
+            TensorSpec("prompt_mask", "int32", ["1", "G"], "geometry_encoder"),
         ],
         outputs=[
-            TensorSpec("mask_logits", "float16", ["1", "N", "Hm", "Wm"], "mask_decoder"),
-            TensorSpec("mask_scores", "float16", ["1", "N"], "mask_decoder"),
+            TensorSpec("mask_logits", "float32", ["1", "N", "Hm", "Wm"], "mask_decoder"),
+            TensorSpec("semantic_segmentation", "float32", ["1", "2", "Hm", "Wm"], "mask_decoder"),
         ],
     ),
     "memory_encoder": PartitionSpec(
@@ -99,12 +112,13 @@ PARTITIONS: dict[str, PartitionSpec] = {
         onnx_name="sam3_memory_encoder.onnx",
         hbm_name="sam3_memory_encoder.hbm",
         inputs=[
-            TensorSpec("image_embeddings", "float16", ["1", "C", "H/stride", "W/stride"], "image_encoder"),
-            TensorSpec("object_tokens", "float16", ["1", "N", "C"], "detector"),
-            TensorSpec("mask_logits", "float16", ["1", "N", "Hm", "Wm"], "mask_decoder"),
-            TensorSpec("track_tokens", "float16", ["1", "N", "C"], "tracker"),
+            TensorSpec("vision_features", "float32", ["1", "C", "H/stride", "W/stride"], "tracker_vision_features"),
+            TensorSpec("masks", "float32", ["1", "1", "Hm", "Wm"], "tracker_masks"),
         ],
-        outputs=[TensorSpec("memory_tokens", "float16", ["1", "M", "C"], "memory_encoder")],
+        outputs=[
+            TensorSpec("memory_features", "float32", ["1", "C", "H/stride", "W/stride"], "memory_encoder"),
+            TensorSpec("memory_positional_embeddings", "float32", ["1", "C", "H/stride", "W/stride"], "memory_encoder"),
+        ],
     ),
     "tracker": PartitionSpec(
         name="tracker",
@@ -114,7 +128,7 @@ PARTITIONS: dict[str, PartitionSpec] = {
         inputs=[
             TensorSpec("image_embeddings", "float16", ["1", "C", "H/stride", "W/stride"], "image_encoder"),
             TensorSpec("object_tokens", "float16", ["1", "N", "C"], "detector"),
-            TensorSpec("memory_tokens", "float16", ["1", "M", "C"], "memory_encoder"),
+            TensorSpec("memory_features", "float32", ["1", "C", "H/stride", "W/stride"], "memory_encoder"),
         ],
         outputs=[TensorSpec("track_tokens", "float16", ["1", "N", "C"], "tracker")],
     ),
@@ -133,7 +147,7 @@ PARTITIONS: dict[str, PartitionSpec] = {
         hbm_name="sam3_multiplex_tracker.hbm",
         inputs=[
             TensorSpec("multiplex_object_tokens", "float16", ["1", "N", "C"], "multiplex_detector"),
-            TensorSpec("memory_tokens", "float16", ["1", "M", "C"], "memory_encoder"),
+            TensorSpec("memory_features", "float32", ["1", "C", "H/stride", "W/stride"], "memory_encoder"),
         ],
         outputs=[TensorSpec("multiplex_track_tokens", "float16", ["1", "N", "C"], "multiplex_tracker")],
     ),
