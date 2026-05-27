@@ -22,13 +22,14 @@ Create and verify the export environment:
 conda create -y -n sam3-export -c conda-forge --override-channels python=3.11 pip
 conda install -y -n sam3-export -c conda-forge --override-channels \
   pytorch torchvision onnx onnxruntime numpy safetensors pyyaml huggingface_hub transformers tokenizers accelerate
+conda run -n sam3-export python -m pip install modelscope
 conda run -n sam3-export python - <<'PY'
 import torch, onnx, onnxruntime, transformers
 print(torch.__version__, onnx.__version__, onnxruntime.__version__, transformers.__version__)
 PY
 ```
 
-This repository was verified with `torch 2.6.0`, `onnx 1.17.0`, `onnxruntime 1.26.0`, and `transformers 5.9.0` on linux-aarch64.
+This repository was verified with `torch 2.6.0`, `onnx 1.17.0`, `onnxruntime 1.26.0`, `transformers 5.9.0`, and `modelscope 1.37.1` on linux-aarch64.
 
 ## Official gated weights
 
@@ -43,14 +44,21 @@ Accept the upstream license and authenticate first:
 conda run -n sam3-export huggingface-cli login
 ```
 
-Then download the authorized assets:
+Then download the authorized assets from Hugging Face:
 
 ```bash
-conda run -n sam3-export tools/download/download_sam3_weights.py --variant sam3 --out-dir models/upstream
-conda run -n sam3-export tools/download/download_sam3_weights.py --variant sam3.1 --out-dir models/upstream
+conda run -n sam3-export tools/download/download_sam3_weights.py --source huggingface --variant sam3 --out-dir models/upstream
+conda run -n sam3-export tools/download/download_sam3_weights.py --source huggingface --variant sam3.1 --out-dir models/upstream
 ```
 
-Without an authorized token, Hugging Face returns `GatedRepoError 401` and real checkpoint conversion cannot proceed.
+If Hugging Face access is gated for the current token, ModelScope can mirror the official `facebook/sam3` and `facebook/sam3.1` assets:
+
+```bash
+conda run -n sam3-export tools/download/download_sam3_weights.py --source modelscope --variant sam3 --out-dir models/upstream
+conda run -n sam3-export tools/download/download_sam3_weights.py --source modelscope --variant sam3.1 --out-dir models/upstream
+```
+
+Without an authorized Hugging Face token, Hugging Face returns `GatedRepoError 401`. ModelScope download was verified for `facebook/sam3` and `facebook/sam3.1` on this machine.
 
 ## Export contract generation
 
@@ -122,9 +130,22 @@ PYTHONPATH=/path/to/upstream_sam3:$PYTHONPATH \
   --partition detector
 ```
 
-The adapter resolves each partition from the returned model using candidates recorded in the contract, such as `image_encoder`, `vision_encoder`, `detector`, `mask_decoder`, `memory_encoder`, `tracker`, `multiplex_detector`, and `multiplex_tracker`. Use `--dry-run` first to check that the factory and partition names resolve before exporting ONNX.
+The adapter resolves each partition from the returned model using candidates recorded in the contract, such as `image_encoder`, `vision_encoder`, `detector_model`, `mask_decoder`, `memory_encoder`, `tracker_model`, `multiplex_detector`, and `multiplex_tracker`. Use `--dry-run` first to check that the factory and partition names resolve before exporting ONNX.
 
-The default concrete export dimensions are conservative placeholders: image size `1008`, embedding channels `256`, stride `16`, max text/geometry/object/memory tokens `256`, and mask size `256`. Override these with `--image-size`, `--embed-channels`, `--image-stride`, `--max-text-tokens`, `--max-geometry-tokens`, `--max-objects`, `--max-memory-tokens`, and `--mask-size` once the upstream SAM3 export contract is fixed.
+For the official Transformers-format ModelScope download, use the built-in factory:
+
+```bash
+PYTHONPATH=tools/export \
+  conda run -n sam3-export python tools/export/export_sam3_onnx.py \
+  --model-factory sam3_transformers_factory:create_model \
+  --model-config models/upstream/modelscope/sam3 \
+  --out-dir build/sam3_export \
+  --partition image_encoder \
+  --partition detector \
+  --dry-run
+```
+
+The default concrete export dimensions are conservative placeholders: image size `1008`, embedding channels `256`, stride `16`, max text/geometry/object/memory tokens `256`, and mask size `256`. Override these with `--image-size`, `--embed-channels`, `--image-stride`, `--max-text-tokens`, `--max-geometry-tokens`, `--max-objects`, `--max-memory-tokens`, and `--mask-size` once the upstream SAM3 export contract is fixed. With the ModelScope `facebook/sam3` download, `text_encoder` and `image_encoder` ONNX export and ONNX checker validation have been verified.
 
 ## HBM conversion
 

@@ -20,22 +20,29 @@ DTYPES = {
 }
 
 
-class ContractModuleWrapper:
-    def __init__(self, module: Any, output_count: int):
-        self.module = module
-        self.output_count = output_count
+def make_contract_module(torch: Any, module: Any, output_count: int) -> Any:
+    class _Wrapper(torch.nn.Module):
+        def __init__(self, wrapped: Any, count: int):
+            super().__init__()
+            self.wrapped = wrapped
+            self.count = count
 
-    def __call__(self, *args: Any) -> Any:
-        output = self.module(*args)
-        if isinstance(output, dict):
-            values = list(output.values())
-        elif isinstance(output, (tuple, list)):
-            values = list(output)
-        else:
-            values = [output]
-        if len(values) < self.output_count:
-            raise RuntimeError(f"partition returned {len(values)} outputs, expected at least {self.output_count}")
-        return tuple(values[: self.output_count])
+        def forward(self, *args: Any) -> Any:
+            output = self.wrapped(*args)
+            if isinstance(output, dict):
+                values = list(output.values())
+            elif hasattr(output, "to_tuple"):
+                values = list(output.to_tuple())
+            elif isinstance(output, (tuple, list)):
+                values = list(output)
+            else:
+                values = [output]
+            values = [value for value in values if hasattr(value, "shape")]
+            if len(values) < self.count:
+                raise RuntimeError(f"partition returned {len(values)} tensor outputs, expected at least {self.count}")
+            return tuple(values[: self.count])
+
+    return _Wrapper(module, output_count)
 
 
 def import_factory(factory: str) -> Any:
@@ -114,7 +121,7 @@ def export_partition(torch: Any, model: Any, contract_path: Path, args: argparse
     onnx_path = Path(contract["onnx_path"])
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
 
-    wrapper = ContractModuleWrapper(module, len(output_names))
+    wrapper = make_contract_module(torch, module, len(output_names))
     torch.onnx.export(
         wrapper,
         inputs,

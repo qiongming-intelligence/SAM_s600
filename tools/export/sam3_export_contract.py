@@ -34,15 +34,15 @@ class PartitionSpec:
 PARTITIONS: dict[str, PartitionSpec] = {
     "image_encoder": PartitionSpec(
         name="image_encoder",
-        upstream_candidates=["image_encoder", "vision_encoder", "backbone", "image_backbone"],
+        upstream_candidates=["image_encoder", "vision_encoder", "detector_model.vision_encoder", "detector_model.backbone", "backbone", "image_backbone"],
         onnx_name="sam3_image_encoder.onnx",
         hbm_name="sam3_image_encoder.hbm",
-        inputs=[TensorSpec("image", "uint8", ["1", "H", "W", "C"], "raw_preprocessed_image")],
+        inputs=[TensorSpec("image", "float32", ["1", "3", "H", "W"], "preprocessed_pixel_values")],
         outputs=[TensorSpec("image_embeddings", "float16", ["1", "C", "H/stride", "W/stride"], "image_encoder")],
     ),
     "text_encoder": PartitionSpec(
         name="text_encoder",
-        upstream_candidates=["text_encoder", "language_encoder", "prompt_encoder.text"],
+        upstream_candidates=["text_encoder", "detector_model.text_encoder", "language_encoder", "prompt_encoder.text"],
         onnx_name="sam3_text_encoder.onnx",
         hbm_name="sam3_text_encoder.hbm",
         inputs=[
@@ -53,7 +53,7 @@ PARTITIONS: dict[str, PartitionSpec] = {
     ),
     "geometry_encoder": PartitionSpec(
         name="geometry_encoder",
-        upstream_candidates=["geometry_encoder", "prompt_encoder", "point_encoder", "box_encoder"],
+        upstream_candidates=["geometry_encoder", "detector_model.geometry_encoder", "tracker_model.prompt_encoder", "prompt_encoder", "point_encoder", "box_encoder"],
         onnx_name="sam3_geometry_encoder.onnx",
         hbm_name="sam3_geometry_encoder.hbm",
         inputs=[
@@ -65,7 +65,7 @@ PARTITIONS: dict[str, PartitionSpec] = {
     ),
     "detector": PartitionSpec(
         name="detector",
-        upstream_candidates=["detector", "object_detector", "prompt_detector"],
+        upstream_candidates=["detector", "detector_model", "object_detector", "prompt_detector"],
         onnx_name="sam3_detector.onnx",
         hbm_name="sam3_detector.hbm",
         inputs=[
@@ -81,7 +81,7 @@ PARTITIONS: dict[str, PartitionSpec] = {
     ),
     "mask_decoder": PartitionSpec(
         name="mask_decoder",
-        upstream_candidates=["mask_decoder", "segmentation_decoder"],
+        upstream_candidates=["mask_decoder", "detector_model.mask_decoder", "tracker_model.mask_decoder", "segmentation_decoder"],
         onnx_name="sam3_mask_decoder.onnx",
         hbm_name="sam3_mask_decoder.hbm",
         inputs=[
@@ -95,7 +95,7 @@ PARTITIONS: dict[str, PartitionSpec] = {
     ),
     "memory_encoder": PartitionSpec(
         name="memory_encoder",
-        upstream_candidates=["memory_encoder", "video_memory_encoder"],
+        upstream_candidates=["memory_encoder", "tracker_model.memory_encoder", "video_memory_encoder"],
         onnx_name="sam3_memory_encoder.onnx",
         hbm_name="sam3_memory_encoder.hbm",
         inputs=[
@@ -108,7 +108,7 @@ PARTITIONS: dict[str, PartitionSpec] = {
     ),
     "tracker": PartitionSpec(
         name="tracker",
-        upstream_candidates=["tracker", "video_tracker", "track_predictor"],
+        upstream_candidates=["tracker", "tracker_model", "video_tracker", "track_predictor"],
         onnx_name="sam3_video_tracker.onnx",
         hbm_name="sam3_video_tracker.hbm",
         inputs=[
@@ -123,7 +123,7 @@ PARTITIONS: dict[str, PartitionSpec] = {
         upstream_candidates=["multiplex_detector", "object_multiplex.detector"],
         onnx_name="sam3_multiplex_detector.onnx",
         hbm_name="sam3_multiplex_detector.hbm",
-        inputs=[TensorSpec("multiplex_frame", "uint8", ["1", "H", "W", "C"], "raw_preprocessed_frame")],
+        inputs=[TensorSpec("multiplex_frame", "float32", ["1", "3", "H", "W"], "preprocessed_pixel_values")],
         outputs=[TensorSpec("multiplex_object_tokens", "float16", ["1", "N", "C"], "multiplex_detector")],
     ),
     "multiplex_tracker": PartitionSpec(
