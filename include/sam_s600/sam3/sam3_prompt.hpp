@@ -27,7 +27,7 @@ struct Sam3BoxPrompt {
 };
 
 struct Sam3Prompt {
-  Sam3PromptType type{Sam3PromptType::kText};
+  std::vector<Sam3PromptType> types;
   std::string text;
   std::vector<Sam3PointPrompt> points;
   std::vector<Sam3BoxPrompt> boxes;
