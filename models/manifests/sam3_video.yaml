@@ -1,0 +1,9 @@
+name: sam3_video
+version: pre-alpha
+parts:
+  image_encoder: models/hbm/sam3_image_encoder.hbm
+  text_encoder: models/hbm/sam3_text_encoder.hbm
+  detector: models/hbm/sam3_detector.hbm
+  mask_decoder: models/hbm/sam3_mask_decoder.hbm
+  memory_encoder: models/hbm/sam3_memory_encoder.hbm
+  tracker: models/hbm/sam3_video_tracker.hbm

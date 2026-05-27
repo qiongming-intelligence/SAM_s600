@@ -1,0 +1,6 @@
+SAM_s600
+Copyright 2026 Qiongming Intelligence contributors.
+
+This project provides C++ runtime, tooling, and documentation for running SAM3/SAM3.1-style inference on D-Robotics S600 BPU.
+
+Meta SAM3 source code, checkpoints, model weights, and associated materials are not redistributed in this repository. Users are responsible for obtaining SAM3 materials from the official upstream source and complying with the SAM License.

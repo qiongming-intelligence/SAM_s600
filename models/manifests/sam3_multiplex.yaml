@@ -1,0 +1,6 @@
+name: sam3_multiplex
+version: pre-alpha
+parts:
+  multiplex_detector: models/hbm/sam3_multiplex_detector.hbm
+  multiplex_tracker: models/hbm/sam3_multiplex_tracker.hbm
+  memory_encoder: models/hbm/sam3_memory_encoder.hbm

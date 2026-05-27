@@ -1,0 +1,38 @@
+# Build artifacts
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+
+# Generated models and weights
+*.hbm
+*.onnx
+*.pt
+*.pth
+*.safetensors
+models/hbm/*
+!models/hbm/.gitkeep
+
+# Benchmark outputs
+benchmarks/results/*
+!benchmarks/results/.gitkeep
+*.csv
+*.jsonl
+
+# Runtime outputs
+result.jpg
+result.png
+outputs/
+logs/
+
+# Python tooling
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Editors
+.vscode/
+.idea/
+*.swp

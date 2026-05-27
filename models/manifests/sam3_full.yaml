@@ -1,0 +1,6 @@
+name: sam3_full
+version: pre-alpha
+include:
+  - sam3_image.yaml
+  - sam3_video.yaml
+  - sam3_multiplex.yaml
