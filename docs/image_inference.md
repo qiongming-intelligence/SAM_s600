@@ -16,4 +16,4 @@ sam3_image_interactive --image input.jpg --point 120,240,1 --box 10,20,300,400
 sam3_image --image input.jpg --mask prompt_mask.png --exemplar exemplar.jpg
 ```
 
-The current pre-alpha CLI validates request wiring and model manifests. Real inference will land after SAM3 subgraph export and S600 HBM conversion.
+The C++ image predictor now validates required SAM3 image partitions, allocates BPU tensor buffers from loaded HBM metadata, and can execute the image encoder when input bytes already match the converted encoder tensors. End-to-end SAM3 object/mask decoding will land after the exported SAM3 detector and mask decoder HBM contracts are fixed.
