@@ -2,14 +2,18 @@
 
 #include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "sam_s600/bpu/bpu_model.hpp"
 #include "sam_s600/core/tensor.hpp"
+#include "sam_s600/sam3/sam3_image_predictor.hpp"
 #include "sam_s600/sam3/sam3_manifest.hpp"
 #include "sam_s600/sam3/sam3_model.hpp"
 #include "sam_s600/sam3/sam3_request.hpp"
@@ -18,7 +22,7 @@ namespace {
 
 void PrintUsage(const char* app) {
   std::cout << "usage: " << app
-            << " [--manifest path] [--check-models] [--load-parts] [--require-all]"
+            << " [--manifest path] [--check-models] [--load-parts] [--require-all] [--run]"
                " [--image path | --input path | --url rtsp-url | --camera device]"
                " [--text prompt] [--point x,y[,label]] [--box x0,y0,x1,y1]"
                " [--mask path] [--exemplar path] [--inspect-part hbm-path]\n";
@@ -29,6 +33,7 @@ struct CliOptions {
   bool check_models{false};
   bool load_parts{false};
   bool require_all{false};
+  bool run{false};
   std::string inspect_part_path;
   sam_s600::Sam3Request request;
 };
@@ -131,6 +136,10 @@ CliOptions ParseOptions(int argc, char** argv, const std::string& fallback) {
     }
     if (arg == "--require-all") {
       options.require_all = true;
+      continue;
+    }
+    if (arg == "--run") {
+      options.run = true;
       continue;
     }
     if (arg == "--inspect-part") {
@@ -349,6 +358,36 @@ void PrintRequest(const sam_s600::Sam3Request& request) {
   PrintPart("exemplar", prompt.exemplar_path);
 }
 
+sam_s600::Image ReadRawImageBytes(const std::string& path) {
+  std::ifstream file(path, std::ios::binary);
+  if (!file) {
+    throw std::runtime_error("failed to open image input: " + path);
+  }
+
+  sam_s600::Image image;
+  image.format = sam_s600::PixelFormat::kUnknown;
+  image.width = 1;
+  image.height = 1;
+  image.data.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  if (image.data.empty()) {
+    throw std::runtime_error("image input is empty: " + path);
+  }
+  image.stride = static_cast<int>(image.data.size());
+  return image;
+}
+
+void RunImagePredictor(const sam_s600::Sam3Manifest& manifest, const sam_s600::Sam3Request& request, bool require_all) {
+  if (request.input_type != sam_s600::Sam3InputType::kImage || request.image_path.empty()) {
+    throw std::runtime_error("--run for image mode requires --image raw-input-path");
+  }
+
+  sam_s600::Sam3Model model(manifest.config);
+  model.Load(require_all);
+  sam_s600::Sam3ImagePredictor predictor(std::move(model));
+  const auto result = predictor.Predict(ReadRawImageBytes(request.image_path), request.prompt);
+  std::cout << "result_objects: " << result.objects.size() << '\n';
+}
+
 }  // namespace
 
 int RunManifestCli(int argc, char** argv, const std::string& default_manifest, const std::string& mode) {
@@ -362,6 +401,12 @@ int RunManifestCli(int argc, char** argv, const std::string& default_manifest, c
     }
     if (options.load_parts) {
       LoadModelParts(manifest, options.require_all);
+    }
+    if (options.run) {
+      if (mode != "sam3_image" && mode != "sam3_image_interactive") {
+        throw std::runtime_error("--run is currently implemented for SAM3 image modes only");
+      }
+      RunImagePredictor(manifest, options.request, options.require_all);
     }
     if (!options.inspect_part_path.empty()) {
       InspectModelPart(options.inspect_part_path);
