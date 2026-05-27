@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 from collections import Counter
 from dataclasses import asdict, dataclass
@@ -175,7 +176,25 @@ def checkpoint_summary(path: Path) -> dict[str, object]:
     }
 
 
-def write_contracts(partitions: list[PartitionSpec], out_dir: Path, checkpoint: Path | None, sam3_repo: Path | None) -> None:
+def concrete_shape(shape: list[str], dims: dict[str, int]) -> list[int]:
+    values = []
+    for item in shape:
+        expr = item
+        for key, value in sorted(dims.items(), key=lambda pair: len(pair[0]), reverse=True):
+            expr = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(key)}(?![A-Za-z0-9_])", str(value), expr)
+        if not re.fullmatch(r"[0-9+\-*/() ]+", expr):
+            raise SystemExit(f"shape expression is still symbolic: {item}")
+        values.append(int(eval(expr, {"__builtins__": {}}, {})))
+    return values
+
+
+def tensor_contract(tensor: TensorSpec, dims: dict[str, int]) -> dict[str, object]:
+    data = asdict(tensor)
+    data["concrete_shape"] = concrete_shape(tensor.shape, dims)
+    return data
+
+
+def write_contracts(partitions: list[PartitionSpec], out_dir: Path, checkpoint: Path | None, sam3_repo: Path | None, dims: dict[str, int]) -> None:
     contracts_dir = out_dir / "contracts"
     onnx_dir = out_dir / "onnx"
     hbm_dir = Path("models/hbm")
@@ -187,21 +206,25 @@ def write_contracts(partitions: list[PartitionSpec], out_dir: Path, checkpoint: 
         "status": "contract_only",
         "checkpoint": str(checkpoint) if checkpoint else None,
         "sam3_repo": str(sam3_repo) if sam3_repo else None,
+        "dimensions": dims,
         "partitions": [],
     }
 
     for spec in partitions:
         contract = asdict(spec)
+        contract["inputs"] = [tensor_contract(tensor, dims) for tensor in spec.inputs]
+        contract["outputs"] = [tensor_contract(tensor, dims) for tensor in spec.outputs]
         contract.update(
             {
                 "format": "sam_s600_partition_contract/v1",
                 "status": "contract_only",
+                "dimensions": dims,
                 "onnx_path": str(onnx_dir / spec.onnx_name),
                 "hbm_path": str(hbm_dir / spec.hbm_name),
                 "export_entrypoint": f"tools/export/export_sam3_{spec.name}.py",
                 "notes": [
                     "Bind C++ runtime stages by exact tensor names.",
-                    "Replace symbolic shapes after upstream SAM3 module tracing fixes concrete export dimensions.",
+                    "Update dimensions after upstream SAM3 module tracing fixes concrete export sizes.",
                     "Do not commit upstream checkpoints, ONNX files, or HBM files.",
                 ],
             }
@@ -231,10 +254,35 @@ def build_parser(default_partitions: list[str] | None = None) -> argparse.Argume
     parser.add_argument("--sam3-repo", type=Path, help="local upstream SAM3 repository checkout")
     parser.add_argument("--out-dir", type=Path, default=Path("build/sam3_export"), help="export work directory")
     parser.add_argument("--partition", action="append", choices=sorted(PARTITIONS), help="partition to include; repeatable")
+    parser.add_argument("--image-size", type=int, default=1008, help="square image/frame export size")
+    parser.add_argument("--embed-channels", type=int, default=256, help="feature/token channel count")
+    parser.add_argument("--image-stride", type=int, default=16, help="image encoder stride")
+    parser.add_argument("--max-text-tokens", type=int, default=256)
+    parser.add_argument("--max-geometry-tokens", type=int, default=256)
+    parser.add_argument("--max-objects", type=int, default=256)
+    parser.add_argument("--max-memory-tokens", type=int, default=256)
+    parser.add_argument("--mask-size", type=int, default=256)
     parser.add_argument("--inspect-checkpoint", action="store_true", help="load checkpoint with PyTorch and write checkpoint_summary.json")
     parser.add_argument("--print-plan", action="store_true", help="print ONNX/HBM conversion plan")
     parser.set_defaults(default_partitions=default_partitions)
     return parser
+
+
+def export_dims(args: argparse.Namespace) -> dict[str, int]:
+    return {
+        "H": args.image_size,
+        "W": args.image_size,
+        "C": args.embed_channels,
+        "T": args.max_text_tokens,
+        "G": args.max_geometry_tokens,
+        "P": args.max_geometry_tokens,
+        "B": args.max_geometry_tokens,
+        "N": args.max_objects,
+        "M": args.max_memory_tokens,
+        "Hm": args.mask_size,
+        "Wm": args.mask_size,
+        "stride": args.image_stride,
+    }
 
 
 def main(default_partitions: list[str] | None = None) -> int:
@@ -244,7 +292,7 @@ def main(default_partitions: list[str] | None = None) -> int:
     partitions = selected_partitions(partition_names)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    write_contracts(partitions, args.out_dir, args.checkpoint, args.sam3_repo)
+    write_contracts(partitions, args.out_dir, args.checkpoint, args.sam3_repo, export_dims(args))
     if args.inspect_checkpoint:
         if args.checkpoint is None:
             raise SystemExit("--inspect-checkpoint requires --checkpoint")

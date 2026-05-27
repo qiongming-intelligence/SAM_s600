@@ -58,6 +58,36 @@ Contracts are written under `build/sam3_export/contracts/`. They define the tens
 
 The shape entries are symbolic until the upstream SAM3 export path fixes concrete dimensions. The exported ONNX graph must preserve these tensor names or the C++ runtime will reject the chain with a missing upstream binding error.
 
+## ONNX export adapter
+
+Once the authorized upstream SAM3 Python package and checkpoint are available, provide a model factory callable that returns the upstream model object:
+
+```python
+# my_sam3_factory.py
+def create_model(checkpoint=None, model_config=None, device="cpu"):
+    # Import the authorized upstream SAM3 package here.
+    # Build the model, load checkpoint weights, move to device, and return it.
+    ...
+```
+
+Run the adapter:
+
+```bash
+PYTHONPATH=/path/to/upstream_sam3:$PYTHONPATH \
+  tools/export/export_sam3_onnx.py \
+  --model-factory my_sam3_factory:create_model \
+  --checkpoint /path/to/authorized_sam3_checkpoint.pt \
+  --model-config /path/to/upstream_config.yaml \
+  --sam3-repo /path/to/upstream_sam3 \
+  --out-dir build/sam3_export \
+  --partition image_encoder \
+  --partition detector
+```
+
+The adapter resolves each partition from the returned model using candidates recorded in the contract, such as `image_encoder`, `vision_encoder`, `detector`, `mask_decoder`, `memory_encoder`, `tracker`, `multiplex_detector`, and `multiplex_tracker`. Use `--dry-run` first to check that the factory and partition names resolve before exporting ONNX.
+
+The default concrete export dimensions are conservative placeholders: image size `1008`, embedding channels `256`, stride `16`, max text/geometry/object/memory tokens `256`, and mask size `256`. Override these with `--image-size`, `--embed-channels`, `--image-stride`, `--max-text-tokens`, `--max-geometry-tokens`, `--max-objects`, `--max-memory-tokens`, and `--mask-size` once the upstream SAM3 export contract is fixed.
+
 ## HBM conversion
 
 After real ONNX files exist at the `onnx_path` values recorded in the contracts, convert them on an S600 toolchain host:
@@ -87,4 +117,4 @@ Use `--require-existing` to fail if any expected HBM file is missing.
 
 ## Next implementation stage
 
-The next non-placeholder step is to add upstream SAM3 module adapters that import the authorized SAM3 Python package, resolve the partition modules from the checkpoint, construct dummy inputs matching each contract, and call `torch.onnx.export` for each partition.
+The next step is to replace the user-supplied factory shim with built-in adapters for the exact authorized SAM3/SAM3.1 upstream package layout once the module names, preprocessing code, and checkpoint format are available locally. After that, validate each ONNX partition numerically against the upstream PyTorch outputs before HBM conversion.
