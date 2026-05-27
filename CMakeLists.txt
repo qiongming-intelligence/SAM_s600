@@ -45,7 +45,7 @@ endif()
 
 if(SAM_S600_BUILD_APPS)
     foreach(app IN ITEMS sam3_image sam3_image_interactive sam3_video sam3_video_tracking sam3_multiplex_video sam3_camera sam3_rtsp sam3_benchmark)
-        add_executable(${app} apps/${app}.cpp)
+        add_executable(${app} apps/${app}.cpp apps/cli_common.cpp)
         target_link_libraries(${app} PRIVATE sam_s600::sam_s600)
         target_apply_sam_s600_warnings(${app})
     endforeach()
