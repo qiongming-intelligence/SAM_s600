@@ -20,6 +20,7 @@ add_library(sam_s600
     src/sam3/sam3_model.cpp
     src/sam3/sam3_processor.cpp
     src/sam3/sam3_tokenizer.cpp
+    src/sam3/sam3_manifest.cpp
     src/sam3/sam3_image_predictor.cpp
     src/sam3/sam3_video_predictor.cpp
     src/multiplex/multiplex_video_predictor.cpp
