@@ -15,6 +15,7 @@ compile_commands.json
 models/hbm/*
 !models/hbm/.gitkeep
 models/upstream/
+.toolchain_downloads/
 
 # Benchmark outputs
 benchmarks/results/*
