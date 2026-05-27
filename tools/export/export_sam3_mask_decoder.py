@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
-"""Export SAM3 mask decoder subgraph for S600 conversion."""
+"""Generate the SAM3 mask decoder export contract for S600 conversion."""
 
-raise SystemExit("TODO: load authorized SAM3 checkpoint and export mask decoder ONNX")
+from sam3_export_contract import main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(["mask_decoder"]))

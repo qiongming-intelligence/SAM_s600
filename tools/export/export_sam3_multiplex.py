@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
-"""Export SAM3.1 multiplex detector/tracker subgraphs for S600 conversion."""
+"""Generate SAM3.1 multiplex export contracts for S600 conversion."""
 
-raise SystemExit("TODO: load authorized SAM3.1 checkpoint and export multiplex ONNX")
+from sam3_export_contract import main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(["multiplex_detector", "multiplex_tracker", "memory_encoder"]))
