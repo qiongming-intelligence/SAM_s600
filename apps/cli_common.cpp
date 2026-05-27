@@ -11,10 +11,16 @@
 namespace {
 
 void PrintUsage(const char* app) {
-  std::cout << "usage: " << app << " [--manifest models/manifests/sam3_image.yaml]\n";
+  std::cout << "usage: " << app << " [--manifest path] [--check-models]\n";
 }
 
-std::string ManifestPath(int argc, char** argv, const std::string& fallback) {
+struct CliOptions {
+  std::string manifest_path;
+  bool check_models{false};
+};
+
+CliOptions ParseOptions(int argc, char** argv, const std::string& fallback) {
+  CliOptions options{fallback, false};
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--help" || arg == "-h") {
@@ -25,10 +31,16 @@ std::string ManifestPath(int argc, char** argv, const std::string& fallback) {
       if (i + 1 >= argc) {
         throw std::runtime_error("--manifest requires a path");
       }
-      return argv[++i];
+      options.manifest_path = argv[++i];
+      continue;
     }
+    if (arg == "--check-models") {
+      options.check_models = true;
+      continue;
+    }
+    throw std::runtime_error("unknown argument: " + arg);
   }
-  return fallback;
+  return options;
 }
 
 void PrintPart(const char* name, const std::string& path) {
@@ -54,11 +66,23 @@ void PrintManifest(const sam_s600::Sam3Manifest& manifest, const std::string& mo
   std::cout << "multiplex: " << (manifest.config.enable_multiplex ? "enabled" : "disabled") << '\n';
 }
 
+void PrintModelChecks(const sam_s600::Sam3Config& config) {
+  const auto checks = sam_s600::CheckSam3ModelParts(config);
+  for (const auto& item : checks) {
+    std::cout << item.part.name << ": " << (item.exists ? "present" : "missing") << " -> " << item.part.path << '\n';
+  }
+}
+
 }  // namespace
 
 int RunManifestCli(int argc, char** argv, const std::string& default_manifest, const std::string& mode) {
   try {
-    PrintManifest(sam_s600::LoadSam3Manifest(ManifestPath(argc, argv, default_manifest)), mode);
+    const auto options = ParseOptions(argc, argv, default_manifest);
+    const auto manifest = sam_s600::LoadSam3Manifest(options.manifest_path);
+    PrintManifest(manifest, mode);
+    if (options.check_models) {
+      PrintModelChecks(manifest.config);
+    }
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "error: " << error.what() << '\n';

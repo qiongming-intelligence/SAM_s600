@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -132,6 +131,40 @@ Sam3Manifest LoadSam3ManifestImpl(const std::filesystem::path& path) {
 
 Sam3Manifest LoadSam3Manifest(const std::string& path) {
   return LoadSam3ManifestImpl(std::filesystem::path(path));
+}
+
+}  // namespace sam_s600
+
+
+namespace sam_s600 {
+
+std::vector<Sam3ModelPart> ListSam3ModelParts(const Sam3Config& config) {
+  const auto& parts = config.model_parts;
+  std::vector<Sam3ModelPart> result;
+  const auto append = [&result](const std::string& name, const std::string& path) {
+    if (!path.empty()) {
+      result.push_back(Sam3ModelPart{name, path});
+    }
+  };
+
+  append("image_encoder", parts.image_encoder);
+  append("text_encoder", parts.text_encoder);
+  append("geometry_encoder", parts.geometry_encoder);
+  append("detector", parts.detector);
+  append("mask_decoder", parts.mask_decoder);
+  append("memory_encoder", parts.memory_encoder);
+  append("tracker", parts.tracker);
+  append("multiplex_detector", parts.multiplex_detector);
+  append("multiplex_tracker", parts.multiplex_tracker);
+  return result;
+}
+
+std::vector<Sam3ModelPartStatus> CheckSam3ModelParts(const Sam3Config& config) {
+  std::vector<Sam3ModelPartStatus> result;
+  for (const auto& part : ListSam3ModelParts(config)) {
+    result.push_back(Sam3ModelPartStatus{part, std::filesystem::exists(part.path)});
+  }
+  return result;
 }
 
 }  // namespace sam_s600
