@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 
+#include "sam_s600/core/tensor.hpp"
+
 namespace sam_s600 {
 
 enum class BpuMemoryLocation {
@@ -63,10 +65,18 @@ class BpuBuffer {
   std::unique_ptr<Impl> impl_;
 };
 
+struct BpuTensorBuffer {
+  TensorInfo info;
+  BpuBuffer buffer;
+};
+
+[[nodiscard]] std::uint64_t TensorStorageBytes(const TensorInfo& info);
+
 class BpuAllocator {
  public:
   [[nodiscard]] BpuBuffer Allocate(std::size_t bytes) const;
   [[nodiscard]] BpuBuffer Allocate(std::size_t bytes, BpuAllocationOptions options) const;
+  [[nodiscard]] BpuTensorBuffer AllocateTensor(const TensorInfo& info, BpuAllocationOptions options = {}) const;
 };
 
 }  // namespace sam_s600

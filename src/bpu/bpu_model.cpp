@@ -189,6 +189,26 @@ const std::vector<TensorInfo>& BpuModel::Inputs() const { return inputs_; }
 
 const std::vector<TensorInfo>& BpuModel::Outputs() const { return outputs_; }
 
+std::vector<BpuTensorBuffer> BpuModel::AllocateInputs(BpuAllocationOptions options) const {
+  BpuAllocator allocator;
+  std::vector<BpuTensorBuffer> buffers;
+  buffers.reserve(inputs_.size());
+  for (const auto& input : inputs_) {
+    buffers.push_back(allocator.AllocateTensor(input, options));
+  }
+  return buffers;
+}
+
+std::vector<BpuTensorBuffer> BpuModel::AllocateOutputs(BpuAllocationOptions options) const {
+  BpuAllocator allocator;
+  std::vector<BpuTensorBuffer> buffers;
+  buffers.reserve(outputs_.size());
+  for (const auto& output : outputs_) {
+    buffers.push_back(allocator.AllocateTensor(output, options));
+  }
+  return buffers;
+}
+
 int BpuModel::CompileBpuCoreNum() const { return compile_bpu_core_num_; }
 
 }  // namespace sam_s600

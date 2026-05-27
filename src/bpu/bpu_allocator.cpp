@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <new>
 #include <stdexcept>
@@ -37,6 +38,40 @@ std::uint32_t ToAllocFlag(BpuCacheMode cache_mode, bool shared_iova) {
   (void)shared_iova;
   return 0;
 #endif
+}
+
+std::uint64_t DTypeStorageBits(TensorDataType dtype) {
+  switch (dtype) {
+    case TensorDataType::kInt4:
+    case TensorDataType::kUint4:
+      return 4;
+    case TensorDataType::kInt8:
+    case TensorDataType::kUint8:
+    case TensorDataType::kBool8:
+      return 8;
+    case TensorDataType::kFloat16:
+    case TensorDataType::kInt16:
+    case TensorDataType::kUint16:
+      return 16;
+    case TensorDataType::kFloat32:
+    case TensorDataType::kInt32:
+    case TensorDataType::kUint32:
+      return 32;
+    case TensorDataType::kFloat64:
+    case TensorDataType::kInt64:
+    case TensorDataType::kUint64:
+      return 64;
+    case TensorDataType::kUnknown:
+      return 0;
+  }
+  return 0;
+}
+
+std::uint64_t CheckedMul(std::uint64_t lhs, std::uint64_t rhs) {
+  if (rhs != 0 && lhs > std::numeric_limits<std::uint64_t>::max() / rhs) {
+    throw std::overflow_error("tensor byte size overflow");
+  }
+  return lhs * rhs;
 }
 
 void* AllocateHost(std::size_t bytes) {
@@ -174,6 +209,28 @@ BpuMemoryLocation BpuBuffer::Location() const {
   return impl_ == nullptr ? BpuMemoryLocation::kHost : impl_->location;
 }
 
+std::uint64_t TensorStorageBytes(const TensorInfo& info) {
+  if (info.byte_size != 0) {
+    return info.byte_size;
+  }
+
+  const std::uint64_t bits_per_element = DTypeStorageBits(info.dtype);
+  if (bits_per_element == 0 || info.shape.dims.empty()) {
+    return 0;
+  }
+
+  std::uint64_t element_count = 1;
+  for (int dim : info.shape.dims) {
+    if (dim < 0) {
+      return 0;
+    }
+    element_count = CheckedMul(element_count, static_cast<std::uint64_t>(dim));
+  }
+
+  const std::uint64_t total_bits = CheckedMul(element_count, bits_per_element);
+  return (total_bits + 7U) / 8U;
+}
+
 BpuBuffer BpuAllocator::Allocate(std::size_t bytes) const {
   return Allocate(bytes, BpuAllocationOptions{});
 }
@@ -223,6 +280,16 @@ BpuBuffer BpuAllocator::Allocate(std::size_t bytes, BpuAllocationOptions options
   }
 
   return BpuBuffer{std::move(impl)};
+}
+
+BpuTensorBuffer BpuAllocator::AllocateTensor(const TensorInfo& info, BpuAllocationOptions options) const {
+  BpuTensorBuffer tensor_buffer;
+  tensor_buffer.info = info;
+  if (options.label.empty()) {
+    options.label = info.name;
+  }
+  tensor_buffer.buffer = Allocate(static_cast<std::size_t>(TensorStorageBytes(info)), std::move(options));
+  return tensor_buffer;
 }
 
 }  // namespace sam_s600

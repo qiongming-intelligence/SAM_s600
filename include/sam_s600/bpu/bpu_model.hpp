@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "sam_s600/bpu/bpu_allocator.hpp"
 #include "sam_s600/core/tensor.hpp"
 
 namespace sam_s600 {
@@ -27,6 +28,8 @@ class BpuModel {
   [[nodiscard]] const std::string& Name() const;
   [[nodiscard]] const std::vector<TensorInfo>& Inputs() const;
   [[nodiscard]] const std::vector<TensorInfo>& Outputs() const;
+  [[nodiscard]] std::vector<BpuTensorBuffer> AllocateInputs(BpuAllocationOptions options = {}) const;
+  [[nodiscard]] std::vector<BpuTensorBuffer> AllocateOutputs(BpuAllocationOptions options = {}) const;
   [[nodiscard]] int CompileBpuCoreNum() const;
 
  private:
