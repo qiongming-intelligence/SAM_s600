@@ -1,6 +1,7 @@
 #include "sam_s600/sam3/sam3_video_predictor.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -105,29 +106,96 @@ std::vector<BpuTensorBuffer> RunStageFromSources(const BpuModel& stage,
   return outputs;
 }
 
-void CopyFrameBytesToTensors(const VideoFrame& frame, std::vector<BpuTensorBuffer>& inputs) {
-  if (frame.image.data.empty()) {
-    throw std::runtime_error("video frame image data is empty");
+void CopyRawBytesToTensors(const std::vector<std::uint8_t>& bytes,
+                           const std::string& stage_name,
+                           std::vector<BpuTensorBuffer>& inputs) {
+  if (bytes.empty()) {
+    throw std::runtime_error(stage_name + " input bytes are empty");
   }
   if (inputs.empty()) {
-    throw std::runtime_error("image encoder has no inputs");
+    throw std::runtime_error(stage_name + " has no inputs");
   }
 
   const std::size_t required_bytes = TotalTensorBytes(inputs);
-  if (frame.image.data.size() != required_bytes) {
-    throw std::runtime_error("video frame data size does not match SAM3 image encoder inputs");
+  if (bytes.size() > required_bytes) {
+    throw std::runtime_error(stage_name + " input bytes exceed tensor inputs");
   }
 
   std::size_t offset = 0;
   for (auto& input : inputs) {
     auto* dst = input.buffer.CpuData();
     if (dst == nullptr) {
-      throw std::runtime_error("image encoder input buffer has no CPU address");
+      throw std::runtime_error(stage_name + " input buffer has no CPU address");
     }
-    std::copy_n(frame.image.data.data() + offset, input.buffer.Size(), dst);
+    const auto remaining = bytes.size() - offset;
+    const auto copy_bytes = std::min<std::size_t>(remaining, input.buffer.Size());
+    if (copy_bytes > 0) {
+      std::copy_n(bytes.data() + offset, copy_bytes, dst);
+    }
+    if (copy_bytes < input.buffer.Size()) {
+      std::fill_n(dst + copy_bytes, input.buffer.Size() - copy_bytes, std::uint8_t{0});
+    }
     input.buffer.CleanCache();
-    offset += input.buffer.Size();
+    offset += copy_bytes;
   }
+}
+
+void CopyFrameBytesToTensors(const VideoFrame& frame, std::vector<BpuTensorBuffer>& inputs) {
+  if (frame.image.data.empty()) {
+    throw std::runtime_error("video frame image data is empty");
+  }
+  if (frame.image.data.size() != TotalTensorBytes(inputs)) {
+    throw std::runtime_error("video frame data size does not match SAM3 image encoder inputs");
+  }
+  CopyRawBytesToTensors(frame.image.data, "image encoder", inputs);
+}
+
+void AppendBytes(std::vector<std::uint8_t>& bytes, const void* src, std::size_t size) {
+  const auto* first = static_cast<const std::uint8_t*>(src);
+  bytes.insert(bytes.end(), first, first + size);
+}
+
+void AppendFloat(std::vector<std::uint8_t>& bytes, float value) { AppendBytes(bytes, &value, sizeof(value)); }
+
+void AppendInt(std::vector<std::uint8_t>& bytes, int value) { AppendBytes(bytes, &value, sizeof(value)); }
+
+std::vector<std::uint8_t> PackTextPromptBytes(const Sam3Prompt& prompt) {
+  std::vector<std::uint8_t> bytes;
+  bytes.reserve(prompt.text.size() + sizeof(int));
+  const int length = static_cast<int>(prompt.text.size());
+  AppendInt(bytes, length);
+  bytes.insert(bytes.end(), prompt.text.begin(), prompt.text.end());
+  return bytes;
+}
+
+std::vector<std::uint8_t> PackGeometryPromptBytes(const Sam3Prompt& prompt) {
+  std::vector<std::uint8_t> bytes;
+  AppendInt(bytes, static_cast<int>(prompt.points.size()));
+  for (const auto& point : prompt.points) {
+    AppendFloat(bytes, point.x);
+    AppendFloat(bytes, point.y);
+    AppendInt(bytes, point.label);
+  }
+  AppendInt(bytes, static_cast<int>(prompt.boxes.size()));
+  for (const auto& box : prompt.boxes) {
+    AppendFloat(bytes, box.x0);
+    AppendFloat(bytes, box.y0);
+    AppendFloat(bytes, box.x1);
+    AppendFloat(bytes, box.y1);
+  }
+  AppendInt(bytes, prompt.mask_path.empty() ? 0 : 1);
+  AppendInt(bytes, prompt.exemplar_path.empty() ? 0 : 1);
+  return bytes;
+}
+
+std::vector<BpuTensorBuffer> RunPromptEncoder(const BpuModel& encoder,
+                                              const std::string& stage_name,
+                                              const std::vector<std::uint8_t>& bytes) {
+  auto inputs = encoder.AllocateInputs();
+  auto outputs = encoder.AllocateOutputs();
+  CopyRawBytesToTensors(bytes, stage_name, inputs);
+  encoder.Infer(inputs, outputs);
+  return outputs;
 }
 
 void ValidatePrompt(const Sam3Prompt& prompt) {
@@ -180,6 +248,16 @@ Sam3VideoResult Sam3VideoPredictor::Predict(const std::vector<VideoFrame>& frame
   ValidatePrompt(prompt);
   RequireVideoParts(model_, prompt);
 
+  std::vector<BpuTensorBuffer> text_outputs;
+  std::vector<BpuTensorBuffer> geometry_outputs;
+  if (HasPromptType(prompt, Sam3PromptType::kText)) {
+    text_outputs = RunPromptEncoder(RequirePart(model_, "text_encoder"), "text_encoder", PackTextPromptBytes(prompt));
+  }
+  if (HasPromptType(prompt, Sam3PromptType::kPoint) || HasPromptType(prompt, Sam3PromptType::kBox) ||
+      HasPromptType(prompt, Sam3PromptType::kMask) || HasPromptType(prompt, Sam3PromptType::kExemplar)) {
+    geometry_outputs = RunPromptEncoder(RequirePart(model_, "geometry_encoder"), "geometry_encoder", PackGeometryPromptBytes(prompt));
+  }
+
   const auto& image_encoder = RequirePart(model_, "image_encoder");
   const auto& detector = RequirePart(model_, "detector");
   const auto& mask_decoder = RequirePart(model_, "mask_decoder");
@@ -199,20 +277,28 @@ Sam3VideoResult Sam3VideoPredictor::Predict(const std::vector<VideoFrame>& frame
     CopyFrameBytesToTensors(frame, image_inputs);
     image_encoder.Infer(image_inputs, image_outputs);
 
-    const auto detector_sources = TensorRefs(image_outputs);
+    auto detector_sources = TensorRefs(image_outputs);
+    AppendTensorRefs(detector_sources, text_outputs);
+    AppendTensorRefs(detector_sources, geometry_outputs);
     auto detector_outputs = RunStageFromSources(detector, "detector", detector_sources);
 
     auto mask_sources = TensorRefs(image_outputs);
+    AppendTensorRefs(mask_sources, text_outputs);
+    AppendTensorRefs(mask_sources, geometry_outputs);
     AppendTensorRefs(mask_sources, detector_outputs);
     auto mask_outputs = RunStageFromSources(mask_decoder, "mask_decoder", mask_sources);
 
     auto tracker_sources = TensorRefs(image_outputs);
+    AppendTensorRefs(tracker_sources, text_outputs);
+    AppendTensorRefs(tracker_sources, geometry_outputs);
     AppendTensorRefs(tracker_sources, detector_outputs);
     AppendTensorRefs(tracker_sources, mask_outputs);
     AppendTensorRefs(tracker_sources, memory_outputs);
     auto tracker_outputs = RunStageFromSources(tracker, "tracker", tracker_sources);
 
     auto memory_sources = TensorRefs(image_outputs);
+    AppendTensorRefs(memory_sources, text_outputs);
+    AppendTensorRefs(memory_sources, geometry_outputs);
     AppendTensorRefs(memory_sources, detector_outputs);
     AppendTensorRefs(memory_sources, mask_outputs);
     AppendTensorRefs(memory_sources, tracker_outputs);
