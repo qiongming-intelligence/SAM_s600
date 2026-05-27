@@ -50,6 +50,32 @@ std::size_t TotalTensorBytes(const std::vector<BpuTensorBuffer>& buffers) {
   return total;
 }
 
+bool SameShape(const TensorShape& lhs, const TensorShape& rhs) { return lhs.dims == rhs.dims; }
+
+void ValidateCompatibleTensor(const BpuTensorBuffer& source, const BpuTensorBuffer& target, const std::string& stage_name) {
+  if (source.info.dtype != target.info.dtype) {
+    throw std::runtime_error(stage_name + " tensor dtype mismatch: " + target.info.name);
+  }
+  if (!SameShape(source.info.shape, target.info.shape)) {
+    throw std::runtime_error(stage_name + " tensor shape mismatch: " + target.info.name);
+  }
+  if (source.buffer.Size() != target.buffer.Size()) {
+    throw std::runtime_error(stage_name + " tensor byte size mismatch: " + target.info.name);
+  }
+}
+
+void CopyBuffer(const BpuTensorBuffer& source, BpuTensorBuffer& target, const std::string& stage_name) {
+  ValidateCompatibleTensor(source, target, stage_name);
+  const auto bytes = source.buffer.Size();
+  const auto* src = source.buffer.CpuData();
+  auto* dst = target.buffer.CpuData();
+  if (src == nullptr || dst == nullptr) {
+    throw std::runtime_error(stage_name + " tensor binding has no CPU address: " + target.info.name);
+  }
+  std::copy_n(src, bytes, dst);
+  target.buffer.CleanCache();
+}
+
 void CopyImageBytesToTensors(const Image& image, std::vector<BpuTensorBuffer>& inputs) {
   if (image.data.empty()) {
     throw std::runtime_error("image data is empty");
@@ -73,6 +99,53 @@ void CopyImageBytesToTensors(const Image& image, std::vector<BpuTensorBuffer>& i
     input.buffer.CleanCache();
     offset += input.buffer.Size();
   }
+}
+
+const BpuTensorBuffer* FindTensor(const std::vector<const BpuTensorBuffer*>& sources, const std::string& name) {
+  for (const auto* source : sources) {
+    if (source != nullptr && source->info.name == name) {
+      return source;
+    }
+  }
+  return nullptr;
+}
+
+std::vector<const BpuTensorBuffer*> TensorRefs(const std::vector<BpuTensorBuffer>& buffers) {
+  std::vector<const BpuTensorBuffer*> refs;
+  refs.reserve(buffers.size());
+  for (const auto& buffer : buffers) {
+    refs.push_back(&buffer);
+  }
+  return refs;
+}
+
+void AppendTensorRefs(std::vector<const BpuTensorBuffer*>& refs, const std::vector<BpuTensorBuffer>& buffers) {
+  refs.reserve(refs.size() + buffers.size());
+  for (const auto& buffer : buffers) {
+    refs.push_back(&buffer);
+  }
+}
+
+void BindInputsByName(const std::string& stage_name,
+                      const std::vector<const BpuTensorBuffer*>& sources,
+                      std::vector<BpuTensorBuffer>& inputs) {
+  for (auto& input : inputs) {
+    const auto* source = FindTensor(sources, input.info.name);
+    if (source == nullptr) {
+      throw std::runtime_error(stage_name + " input tensor has no upstream binding: " + input.info.name);
+    }
+    CopyBuffer(*source, input, stage_name);
+  }
+}
+
+std::vector<BpuTensorBuffer> RunStageFromSources(const BpuModel& stage,
+                                                 const std::string& stage_name,
+                                                 const std::vector<const BpuTensorBuffer*>& sources) {
+  auto inputs = stage.AllocateInputs();
+  auto outputs = stage.AllocateOutputs();
+  BindInputsByName(stage_name, sources, inputs);
+  stage.Infer(inputs, outputs);
+  return outputs;
 }
 
 void RequirePromptParts(const Sam3Model& model, const Sam3Prompt& prompt) {
@@ -106,10 +179,17 @@ Sam3ImageResult Sam3ImagePredictor::Predict(const Image& image, const Sam3Prompt
   RequirePromptParts(model_, prompt);
 
   const auto& image_encoder = RequirePart(model_, "image_encoder");
-  auto inputs = image_encoder.AllocateInputs();
-  auto outputs = image_encoder.AllocateOutputs();
-  CopyImageBytesToTensors(image, inputs);
-  image_encoder.Infer(inputs, outputs);
+  auto image_inputs = image_encoder.AllocateInputs();
+  auto image_outputs = image_encoder.AllocateOutputs();
+  CopyImageBytesToTensors(image, image_inputs);
+  image_encoder.Infer(image_inputs, image_outputs);
+
+  const auto detector_sources = TensorRefs(image_outputs);
+  auto detector_outputs = RunStageFromSources(RequirePart(model_, "detector"), "detector", detector_sources);
+
+  auto mask_sources = TensorRefs(image_outputs);
+  AppendTensorRefs(mask_sources, detector_outputs);
+  (void)RunStageFromSources(RequirePart(model_, "mask_decoder"), "mask_decoder", mask_sources);
 
   return Sam3ImageResult{};
 }
