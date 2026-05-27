@@ -2,7 +2,7 @@
 
 This project does not redistribute SAM3 checkpoints. Users must obtain authorized SAM3/SAM3.1 weights from the upstream provider and comply with the SAM License.
 
-Current export status: contract and conversion-plan tooling is in place. Real checkpoint tracing and ONNX export still depends on the exact upstream SAM3 module names and exportable forward signatures from the authorized checkpoint package.
+Current export status: contract and conversion-plan tooling is in place, and the `sam3-export` conda environment has been verified with PyTorch, ONNX, ONNX Runtime, Transformers, and Hugging Face Hub on linux-aarch64. Real checkpoint tracing and ONNX export still requires authorized access to the gated official SAM3/SAM3.1 weights.
 
 ## Pipeline
 
@@ -13,6 +13,44 @@ Current export status: contract and conversion-plan tooling is in place. Real ch
 5. Convert validated ONNX models to S600 HBM with the D-Robotics toolchain.
 6. Generate manifests consumed by the C++ runtime.
 7. Validate HBM tensor names/shapes/types with `sam3_* --inspect-part` and runtime smoke runs.
+
+## Export environment
+
+Create and verify the export environment:
+
+```bash
+conda create -y -n sam3-export -c conda-forge --override-channels python=3.11 pip
+conda install -y -n sam3-export -c conda-forge --override-channels \
+  pytorch torchvision onnx onnxruntime numpy safetensors pyyaml huggingface_hub transformers tokenizers accelerate
+conda run -n sam3-export python - <<'PY'
+import torch, onnx, onnxruntime, transformers
+print(torch.__version__, onnx.__version__, onnxruntime.__version__, transformers.__version__)
+PY
+```
+
+This repository was verified with `torch 2.6.0`, `onnx 1.17.0`, `onnxruntime 1.26.0`, and `transformers 5.9.0` on linux-aarch64.
+
+## Official gated weights
+
+The official model repos are gated:
+
+- `facebook/sam3`
+- `facebook/sam3.1`
+
+Accept the upstream license and authenticate first:
+
+```bash
+conda run -n sam3-export huggingface-cli login
+```
+
+Then download the authorized assets:
+
+```bash
+conda run -n sam3-export tools/download/download_sam3_weights.py --variant sam3 --out-dir models/upstream
+conda run -n sam3-export tools/download/download_sam3_weights.py --variant sam3.1 --out-dir models/upstream
+```
+
+Without an authorized token, Hugging Face returns `GatedRepoError 401` and real checkpoint conversion cannot proceed.
 
 ## Export contract generation
 
