@@ -394,14 +394,24 @@ Sam3ImageResult Sam3ImagePredictor::Predict(const Image& image, const Sam3Prompt
   CopyImageBytesToTensors(image, image_inputs);
   image_encoder.Infer(image_inputs, image_outputs);
 
+  std::vector<BpuTensorBuffer> detector_tap_outputs;
+  if (const auto* detector_taps = model_.FindPart("detector_taps")) {
+    auto tap_sources = TensorRefs(image_outputs);
+    AppendTensorRefs(tap_sources, text_outputs);
+    AppendTensorRefs(tap_sources, geometry_outputs);
+    detector_tap_outputs = RunStageFromSources(*detector_taps, "detector_taps", tap_sources);
+  }
+
   auto detector_sources = TensorRefs(image_outputs);
   AppendTensorRefs(detector_sources, text_outputs);
   AppendTensorRefs(detector_sources, geometry_outputs);
+  AppendTensorRefs(detector_sources, detector_tap_outputs);
   auto detector_outputs = RunStageFromSources(RequirePart(model_, "detector"), "detector", detector_sources);
 
   auto mask_sources = TensorRefs(image_outputs);
   AppendTensorRefs(mask_sources, text_outputs);
   AppendTensorRefs(mask_sources, geometry_outputs);
+  AppendTensorRefs(mask_sources, detector_tap_outputs);
   AppendTensorRefs(mask_sources, detector_outputs);
   if (HasRealSplitMaskDecoder(model_)) {
     auto pre_norm_outputs = RunStageFromSources(RequirePart(model_, "mask_decoder_pre_norm"),

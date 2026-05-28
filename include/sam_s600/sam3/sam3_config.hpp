@@ -9,6 +9,7 @@ struct Sam3ModelPartPaths {
   std::string text_encoder;
   std::string geometry_encoder;
   std::string detector;
+  std::string detector_taps;
   std::string mask_decoder;
   std::string mask_decoder_pre_norm;
   std::string mask_decoder_post_norm;

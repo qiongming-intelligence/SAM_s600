@@ -215,6 +215,7 @@ void PrintManifest(const sam_s600::Sam3Manifest& manifest, const std::string& mo
   PrintPart("text_encoder", parts.text_encoder);
   PrintPart("geometry_encoder", parts.geometry_encoder);
   PrintPart("detector", parts.detector);
+  PrintPart("detector_taps", parts.detector_taps);
   PrintPart("mask_decoder", parts.mask_decoder);
   PrintPart("mask_decoder_pre_norm", parts.mask_decoder_pre_norm);
   PrintPart("mask_decoder_post_norm", parts.mask_decoder_post_norm);
@@ -367,7 +368,11 @@ void PrintRequest(const sam_s600::Sam3Request& request) {
   PrintPart("exemplar", prompt.exemplar_path);
 }
 
-sam_s600::Image ReadRawImageBytes(const std::string& path) {
+sam_s600::Image ReadRawImageBytes(const std::string& path, int width, int height) {
+  if (width <= 0 || height <= 0) {
+    throw std::runtime_error("SAM3 input dimensions are invalid");
+  }
+
   std::ifstream file(path, std::ios::binary);
   if (!file) {
     throw std::runtime_error("failed to open image input: " + path);
@@ -375,8 +380,8 @@ sam_s600::Image ReadRawImageBytes(const std::string& path) {
 
   sam_s600::Image image;
   image.format = sam_s600::PixelFormat::kUnknown;
-  image.width = 1;
-  image.height = 1;
+  image.width = width;
+  image.height = height;
   image.data.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
   if (image.data.empty()) {
     throw std::runtime_error("image input is empty: " + path);
@@ -385,14 +390,14 @@ sam_s600::Image ReadRawImageBytes(const std::string& path) {
   return image;
 }
 
-sam_s600::VideoFrame ReadRawVideoFrame(const std::string& path, std::int64_t pts_us) {
+sam_s600::VideoFrame ReadRawVideoFrame(const std::string& path, int width, int height, std::int64_t pts_us) {
   sam_s600::VideoFrame frame;
   frame.pts_us = pts_us;
-  frame.image = ReadRawImageBytes(path);
+  frame.image = ReadRawImageBytes(path, width, height);
   return frame;
 }
 
-std::vector<sam_s600::VideoFrame> ReadRawVideoFrames(const std::string& path) {
+std::vector<sam_s600::VideoFrame> ReadRawVideoFrames(const std::string& path, int width, int height) {
   std::vector<std::string> frame_paths;
   const std::filesystem::path input_path(path);
   if (std::filesystem::is_directory(input_path)) {
@@ -412,7 +417,7 @@ std::vector<sam_s600::VideoFrame> ReadRawVideoFrames(const std::string& path) {
   std::vector<sam_s600::VideoFrame> frames;
   frames.reserve(frame_paths.size());
   for (std::size_t i = 0; i < frame_paths.size(); ++i) {
-    frames.push_back(ReadRawVideoFrame(frame_paths[i], static_cast<std::int64_t>(i)));
+    frames.push_back(ReadRawVideoFrame(frame_paths[i], width, height, static_cast<std::int64_t>(i)));
   }
   return frames;
 }
@@ -425,7 +430,10 @@ void RunImagePredictor(const sam_s600::Sam3Manifest& manifest, const sam_s600::S
   sam_s600::Sam3Model model(manifest.config);
   model.Load(require_all);
   sam_s600::Sam3ImagePredictor predictor(std::move(model));
-  const auto result = predictor.Predict(ReadRawImageBytes(request.image_path), request.prompt);
+  const auto result = predictor.Predict(ReadRawImageBytes(request.image_path,
+                                                         manifest.config.image_width,
+                                                         manifest.config.image_height),
+                                        request.prompt);
   std::cout << "result_objects: " << result.objects.size() << '\n';
 }
 
@@ -437,7 +445,10 @@ void RunVideoPredictor(const sam_s600::Sam3Manifest& manifest, const sam_s600::S
   sam_s600::Sam3Model model(manifest.config);
   model.Load(require_all);
   sam_s600::Sam3VideoPredictor predictor(std::move(model));
-  const auto result = predictor.Predict(ReadRawVideoFrames(request.video_path), request.prompt);
+  const auto result = predictor.Predict(ReadRawVideoFrames(request.video_path,
+                                                          manifest.config.image_width,
+                                                          manifest.config.image_height),
+                                        request.prompt);
   std::cout << "result_frames: " << result.frames.size() << '\n';
 }
 
@@ -449,7 +460,10 @@ void RunMultiplexVideoPredictor(const sam_s600::Sam3Manifest& manifest, const sa
   sam_s600::Sam3Model model(manifest.config);
   model.Load(require_all);
   sam_s600::Sam3MultiplexVideoPredictor predictor(std::move(model));
-  const auto result = predictor.Predict(ReadRawVideoFrames(request.video_path), request.prompt);
+  const auto result = predictor.Predict(ReadRawVideoFrames(request.video_path,
+                                                          manifest.config.image_width,
+                                                          manifest.config.image_height),
+                                        request.prompt);
   std::cout << "result_frames: " << result.frames.size() << '\n';
 }
 
