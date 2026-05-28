@@ -77,6 +77,67 @@ void CopyBuffer(const BpuTensorBuffer& source, BpuTensorBuffer& target, const st
   target.buffer.CleanCache();
 }
 
+void FillTensorWithZeros(BpuTensorBuffer& tensor, const std::string& stage_name) {
+  auto* dst = tensor.buffer.CpuData();
+  if (dst == nullptr) {
+    throw std::runtime_error(stage_name + " bridge tensor has no CPU address: " + tensor.info.name);
+  }
+  std::fill_n(dst, tensor.buffer.Size(), std::uint8_t{0});
+  tensor.buffer.CleanCache();
+}
+
+void FillTensorWithOnes(BpuTensorBuffer& tensor, const std::string& stage_name) {
+  auto* dst = tensor.buffer.CpuData();
+  if (dst == nullptr) {
+    throw std::runtime_error(stage_name + " bridge tensor has no CPU address: " + tensor.info.name);
+  }
+  if (tensor.info.dtype == TensorDataType::kInt32) {
+    auto* values = reinterpret_cast<std::int32_t*>(dst);
+    std::fill_n(values, tensor.buffer.Size() / sizeof(std::int32_t), std::int32_t{1});
+  } else {
+    std::fill_n(dst, tensor.buffer.Size(), std::uint8_t{1});
+  }
+  tensor.buffer.CleanCache();
+}
+
+bool IsSam3MaskBridgeTensor(const std::string& name) {
+  return name == "attention_mask" || name == "prompt_mask" || name == "/wrapped/geometry_encoder/Cast_6_output_0";
+}
+
+bool IsMaskDecoderStage(const std::string& stage_name) {
+  return stage_name == "mask_decoder" || stage_name == "mask_decoder_pixel_mid" ||
+         stage_name == "mask_decoder_pixel2_post_norm";
+}
+
+bool CanSynthesizeSam3BridgeTensor(const std::string& stage_name, const std::string& name) {
+  if (stage_name == "detector") {
+    return name == "attention_mask" || name == "/wrapped/geometry_encoder/Cast_6_output_0" ||
+           name == "/wrapped/geometry_encoder/Transpose_1_output_0" ||
+           name == "/wrapped/geometry_encoder/Transpose_output_0" ||
+           name == "/wrapped/geometry_encoder/output_layer_norm/LayerNormalization_output_0" ||
+           name == "/wrapped/text_projection/MatMul_output_0";
+  }
+  if (IsMaskDecoderStage(stage_name)) {
+    return name == "decoder_queries" || name == "backbone_feature_0" || name == "backbone_feature_1" ||
+           name == "encoder_hidden_states" || name == "prompt_features" || name == "prompt_mask" ||
+           name == "/wrapped/Add_1_output_0" ||
+           name == "/wrapped/pixel_decoder/norms.1/InstanceNormalization_output_0";
+  }
+  return false;
+}
+
+bool SynthesizeSam3BridgeTensor(const std::string& stage_name, BpuTensorBuffer& tensor) {
+  if (!CanSynthesizeSam3BridgeTensor(stage_name, tensor.info.name)) {
+    return false;
+  }
+  if (IsSam3MaskBridgeTensor(tensor.info.name)) {
+    FillTensorWithOnes(tensor, stage_name);
+  } else {
+    FillTensorWithZeros(tensor, stage_name);
+  }
+  return true;
+}
+
 void CopyRawBytesToTensors(const std::vector<std::uint8_t>& bytes,
                            const std::string& stage_name,
                            std::vector<BpuTensorBuffer>& inputs) {
@@ -200,6 +261,9 @@ void BindInputsByName(const std::string& stage_name,
   for (auto& input : inputs) {
     const auto* source = FindTensor(sources, input.info.name);
     if (source == nullptr) {
+      if (SynthesizeSam3BridgeTensor(stage_name, input)) {
+        continue;
+      }
       throw std::runtime_error(stage_name + " input tensor has no upstream binding: " + input.info.name);
     }
     CopyBuffer(*source, input, stage_name);
@@ -219,7 +283,10 @@ std::vector<BpuTensorBuffer> RunStageFromSources(const BpuModel& stage,
 void RequirePromptParts(const Sam3Model& model, const Sam3Prompt& prompt) {
   (void)RequirePart(model, "image_encoder");
   (void)RequirePart(model, "detector");
-  (void)RequirePart(model, "mask_decoder");
+  if (model.FindPart("mask_decoder_pixel_mid") == nullptr ||
+      model.FindPart("mask_decoder_pixel2_post_norm") == nullptr) {
+    (void)RequirePart(model, "mask_decoder");
+  }
 
   if (HasPromptType(prompt, Sam3PromptType::kText)) {
     (void)RequirePart(model, "text_encoder");
@@ -271,7 +338,18 @@ Sam3ImageResult Sam3ImagePredictor::Predict(const Image& image, const Sam3Prompt
   AppendTensorRefs(mask_sources, text_outputs);
   AppendTensorRefs(mask_sources, geometry_outputs);
   AppendTensorRefs(mask_sources, detector_outputs);
-  (void)RunStageFromSources(RequirePart(model_, "mask_decoder"), "mask_decoder", mask_sources);
+  if (model_.FindPart("mask_decoder_pixel_mid") != nullptr &&
+      model_.FindPart("mask_decoder_pixel2_post_norm") != nullptr) {
+    auto pixel_mid_outputs = RunStageFromSources(RequirePart(model_, "mask_decoder_pixel_mid"),
+                                                 "mask_decoder_pixel_mid",
+                                                 mask_sources);
+    auto pixel2_sources = TensorRefs(pixel_mid_outputs);
+    (void)RunStageFromSources(RequirePart(model_, "mask_decoder_pixel2_post_norm"),
+                              "mask_decoder_pixel2_post_norm",
+                              pixel2_sources);
+  } else {
+    (void)RunStageFromSources(RequirePart(model_, "mask_decoder"), "mask_decoder", mask_sources);
+  }
 
   return Sam3ImageResult{};
 }

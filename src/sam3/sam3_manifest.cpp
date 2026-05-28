@@ -36,6 +36,10 @@ void ApplyPart(Sam3ModelPartPaths& parts, const std::string& key, const std::str
     parts.detector = value;
   } else if (key == "mask_decoder") {
     parts.mask_decoder = value;
+  } else if (key == "mask_decoder_pixel_mid") {
+    parts.mask_decoder_pixel_mid = value;
+  } else if (key == "mask_decoder_pixel2_post_norm") {
+    parts.mask_decoder_pixel2_post_norm = value;
   } else if (key == "memory_encoder") {
     parts.memory_encoder = value;
   } else if (key == "tracker") {
@@ -55,6 +59,8 @@ void MergeConfig(Sam3Config& dst, const Sam3Config& src) {
   if (!s.geometry_encoder.empty()) d.geometry_encoder = s.geometry_encoder;
   if (!s.detector.empty()) d.detector = s.detector;
   if (!s.mask_decoder.empty()) d.mask_decoder = s.mask_decoder;
+  if (!s.mask_decoder_pixel_mid.empty()) d.mask_decoder_pixel_mid = s.mask_decoder_pixel_mid;
+  if (!s.mask_decoder_pixel2_post_norm.empty()) d.mask_decoder_pixel2_post_norm = s.mask_decoder_pixel2_post_norm;
   if (!s.memory_encoder.empty()) d.memory_encoder = s.memory_encoder;
   if (!s.tracker.empty()) d.tracker = s.tracker;
   if (!s.multiplex_detector.empty()) d.multiplex_detector = s.multiplex_detector;
@@ -152,6 +158,8 @@ std::vector<Sam3ModelPart> ListSam3ModelParts(const Sam3Config& config) {
   append("geometry_encoder", parts.geometry_encoder);
   append("detector", parts.detector);
   append("mask_decoder", parts.mask_decoder);
+  append("mask_decoder_pixel_mid", parts.mask_decoder_pixel_mid);
+  append("mask_decoder_pixel2_post_norm", parts.mask_decoder_pixel2_post_norm);
   append("memory_encoder", parts.memory_encoder);
   append("tracker", parts.tracker);
   append("multiplex_detector", parts.multiplex_detector);
