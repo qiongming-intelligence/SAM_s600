@@ -413,7 +413,8 @@ Sam3ImageResult Sam3ImagePredictor::Predict(const Image& image, const Sam3Prompt
 
   std::vector<BpuTensorBuffer> detector_tap_outputs;
   if (const auto* detector_taps = model_.FindPart("detector_taps")) {
-    auto tap_sources = TensorRefs(image_outputs);
+    auto tap_sources = TensorRefs(image_inputs);
+    AppendTensorRefs(tap_sources, image_outputs);
     AppendTensorRefs(tap_sources, text_outputs);
     AppendTensorRefs(tap_sources, geometry_outputs);
     detector_tap_outputs = RunStageFromSources(*detector_taps, "detector_taps", tap_sources);
