@@ -60,8 +60,12 @@ print(contract["name"])
 print(contract["onnx_path"])
 print(contract["hbm_name"])
 print(Path(contract["hbm_name"]).stem)
+input_count = len(contract["inputs"])
 print(";".join(tensor["name"] for tensor in contract["inputs"]))
 print(";".join("x".join(str(dim) for dim in tensor["concrete_shape"]) for tensor in contract["inputs"]))
+print(";".join(["featuremap"] * input_count))
+print(";".join(["NCHW"] * input_count))
+print(";".join(contract.get("run_on_cpu", [])))
 PY
   )
   name="${fields[0]}"
@@ -70,6 +74,9 @@ PY
   prefix="${fields[3]}"
   input_names="${fields[4]}"
   input_shapes="${fields[5]}"
+  input_types="${fields[6]}"
+  input_layouts="${fields[7]}"
+  run_on_cpu="${fields[8]}"
   config_path="$config_dir/${name}.yaml"
   if [[ ! -f "$onnx_path" ]]; then
     echo "missing ONNX for $(basename "$contract"): $onnx_path" >&2
@@ -84,17 +91,18 @@ model_parameters:
 
 input_parameters:
   input_name: "$input_names"
-  input_type_rt: "featuremap"
-  input_type_train: "featuremap"
-  input_layout_train: "NCHW"
+  input_type_rt: "$input_types"
+  input_type_train: "$input_types"
+  input_layout_train: "$input_layouts"
   input_shape: "$input_shapes"
   norm_type: "no_preprocess"
 
 calibration_parameters:
   calibration_type: "skip"
+  run_on_cpu: "$run_on_cpu"
 
 compiler_parameters:
-  optimize_level: "O2"
+  optimize_level: "${HB_COMPILE_OPTIMIZE_LEVEL:-O2}"
 EOF
   echo "converting $onnx_path -> $output_dir/$hbm_name"
   hb_compile --config "$config_path"
