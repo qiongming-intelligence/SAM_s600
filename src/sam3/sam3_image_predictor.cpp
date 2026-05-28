@@ -112,6 +112,10 @@ bool IsMaskDecoderStage(const std::string& stage_name) {
 }
 
 bool CanSynthesizeSam3BridgeTensor(const std::string& stage_name, const std::string& name) {
+  if (stage_name == "detector_taps") {
+    return name == "input_ids" || name == "attention_mask" || name == "input_boxes" ||
+           name == "input_boxes_labels" || name == "geometry_roi_features";
+  }
   if (stage_name == "detector") {
     return name == "attention_mask" || name == "/wrapped/geometry_encoder/Cast_6_output_0" ||
            name == "/wrapped/geometry_encoder/Transpose_1_output_0" ||
@@ -241,6 +245,19 @@ const BpuTensorBuffer* FindTensor(const std::vector<const BpuTensorBuffer*>& sou
   return nullptr;
 }
 
+const BpuTensorBuffer* FindSourceTensor(const std::vector<const BpuTensorBuffer*>& sources, const std::string& name) {
+  if (const auto* exact = FindTensor(sources, name)) {
+    return exact;
+  }
+  if (name == "pixel_values") {
+    return FindTensor(sources, "image");
+  }
+  if (name == "encoder_hidden_states") {
+    return FindTensor(sources, "/wrapped/detr_encoder/layers.5/Add_3_output_0");
+  }
+  return nullptr;
+}
+
 std::vector<const BpuTensorBuffer*> TensorRefs(const std::vector<BpuTensorBuffer>& buffers) {
   std::vector<const BpuTensorBuffer*> refs;
   refs.reserve(buffers.size());
@@ -261,7 +278,7 @@ void BindInputsByName(const std::string& stage_name,
                       const std::vector<const BpuTensorBuffer*>& sources,
                       std::vector<BpuTensorBuffer>& inputs) {
   for (auto& input : inputs) {
-    const auto* source = FindTensor(sources, input.info.name);
+    const auto* source = FindSourceTensor(sources, input.info.name);
     if (source == nullptr) {
       if (SynthesizeSam3BridgeTensor(stage_name, input)) {
         continue;
