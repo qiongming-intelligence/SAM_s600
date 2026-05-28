@@ -1,6 +1,7 @@
 #include "sam_s600/sam3/sam3_image_predictor.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -105,7 +106,8 @@ bool IsSam3MaskBridgeTensor(const std::string& name) {
 }
 
 bool IsMaskDecoderStage(const std::string& stage_name) {
-  return stage_name == "mask_decoder" || stage_name == "mask_decoder_pixel_mid" ||
+  return stage_name == "mask_decoder" || stage_name == "mask_decoder_pre_norm" ||
+         stage_name == "mask_decoder_post_norm" || stage_name == "mask_decoder_pixel_mid" ||
          stage_name == "mask_decoder_pixel2_post_norm";
 }
 
@@ -280,11 +282,74 @@ std::vector<BpuTensorBuffer> RunStageFromSources(const BpuModel& stage,
   return outputs;
 }
 
+BpuTensorBuffer CpuHighResolutionInstanceNorm(const BpuTensorBuffer& input, const TensorInfo& output_info) {
+  if (input.info.dtype != TensorDataType::kFloat32 || output_info.dtype != TensorDataType::kFloat32) {
+    throw std::runtime_error("mask decoder CPU norm expects float32 tensors");
+  }
+  if (input.info.shape.dims != std::vector<int>{1, 256, 252, 252}) {
+    throw std::runtime_error("mask decoder CPU norm input shape mismatch: " + input.info.name);
+  }
+  if (output_info.shape.dims != std::vector<int>{1, 8, 2032128}) {
+    throw std::runtime_error("mask decoder CPU norm output shape mismatch: " + output_info.name);
+  }
+
+  BpuAllocator allocator;
+  auto output = allocator.AllocateTensor(output_info);
+  const auto* src = reinterpret_cast<const float*>(input.buffer.CpuData());
+  auto* dst = reinterpret_cast<float*>(output.buffer.CpuData());
+  if (src == nullptr || dst == nullptr) {
+    throw std::runtime_error("mask decoder CPU norm tensor has no CPU address");
+  }
+
+  constexpr int kGroups = 8;
+  constexpr int kChannels = 256;
+  constexpr int kHeight = 252;
+  constexpr int kWidth = 252;
+  constexpr int kChannelsPerGroup = kChannels / kGroups;
+  constexpr int kSpatial = kHeight * kWidth;
+  constexpr int kGroupSize = kChannelsPerGroup * kSpatial;
+  constexpr float kEpsilon = 9.999999747378752e-06F;
+
+  for (int group = 0; group < kGroups; ++group) {
+    const int channel_offset = group * kChannelsPerGroup;
+    double sum = 0.0;
+    double sum_sq = 0.0;
+    for (int channel = 0; channel < kChannelsPerGroup; ++channel) {
+      const auto* channel_src = src + (channel_offset + channel) * kSpatial;
+      for (int index = 0; index < kSpatial; ++index) {
+        const double value = channel_src[index];
+        sum += value;
+        sum_sq += value * value;
+      }
+    }
+    const double mean = sum / kGroupSize;
+    const double variance = std::max(0.0, sum_sq / kGroupSize - mean * mean);
+    const float scale = 1.0F / std::sqrt(static_cast<float>(variance) + kEpsilon);
+    auto* group_dst = dst + group * kGroupSize;
+    for (int channel = 0; channel < kChannelsPerGroup; ++channel) {
+      const auto* channel_src = src + (channel_offset + channel) * kSpatial;
+      for (int index = 0; index < kSpatial; ++index) {
+        group_dst[channel * kSpatial + index] = (channel_src[index] - static_cast<float>(mean)) * scale;
+      }
+    }
+  }
+
+  output.buffer.CleanCache();
+  return output;
+}
+
+bool HasRealSplitMaskDecoder(const Sam3Model& model) {
+  return model.FindPart("mask_decoder_pre_norm") != nullptr && model.FindPart("mask_decoder_post_norm") != nullptr;
+}
+
+bool HasSmokeSplitMaskDecoder(const Sam3Model& model) {
+  return model.FindPart("mask_decoder_pixel_mid") != nullptr && model.FindPart("mask_decoder_pixel2_post_norm") != nullptr;
+}
+
 void RequirePromptParts(const Sam3Model& model, const Sam3Prompt& prompt) {
   (void)RequirePart(model, "image_encoder");
   (void)RequirePart(model, "detector");
-  if (model.FindPart("mask_decoder_pixel_mid") == nullptr ||
-      model.FindPart("mask_decoder_pixel2_post_norm") == nullptr) {
+  if (!HasRealSplitMaskDecoder(model) && !HasSmokeSplitMaskDecoder(model)) {
     (void)RequirePart(model, "mask_decoder");
   }
 
@@ -338,8 +403,20 @@ Sam3ImageResult Sam3ImagePredictor::Predict(const Image& image, const Sam3Prompt
   AppendTensorRefs(mask_sources, text_outputs);
   AppendTensorRefs(mask_sources, geometry_outputs);
   AppendTensorRefs(mask_sources, detector_outputs);
-  if (model_.FindPart("mask_decoder_pixel_mid") != nullptr &&
-      model_.FindPart("mask_decoder_pixel2_post_norm") != nullptr) {
+  if (HasRealSplitMaskDecoder(model_)) {
+    auto pre_norm_outputs = RunStageFromSources(RequirePart(model_, "mask_decoder_pre_norm"),
+                                                "mask_decoder_pre_norm",
+                                                mask_sources);
+    auto post_norm_inputs = RequirePart(model_, "mask_decoder_post_norm").AllocateInputs();
+    if (post_norm_inputs.size() != 1) {
+      throw std::runtime_error("mask_decoder_post_norm expects one input");
+    }
+    auto norm_output = CpuHighResolutionInstanceNorm(pre_norm_outputs.front(), post_norm_inputs.front().info);
+    std::vector<const BpuTensorBuffer*> post_norm_sources{&norm_output};
+    (void)RunStageFromSources(RequirePart(model_, "mask_decoder_post_norm"),
+                              "mask_decoder_post_norm",
+                              post_norm_sources);
+  } else if (HasSmokeSplitMaskDecoder(model_)) {
     auto pixel_mid_outputs = RunStageFromSources(RequirePart(model_, "mask_decoder_pixel_mid"),
                                                  "mask_decoder_pixel_mid",
                                                  mask_sources);

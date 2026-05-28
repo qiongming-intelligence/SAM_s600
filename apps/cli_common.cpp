@@ -216,6 +216,8 @@ void PrintManifest(const sam_s600::Sam3Manifest& manifest, const std::string& mo
   PrintPart("geometry_encoder", parts.geometry_encoder);
   PrintPart("detector", parts.detector);
   PrintPart("mask_decoder", parts.mask_decoder);
+  PrintPart("mask_decoder_pre_norm", parts.mask_decoder_pre_norm);
+  PrintPart("mask_decoder_post_norm", parts.mask_decoder_post_norm);
   PrintPart("mask_decoder_pixel_mid", parts.mask_decoder_pixel_mid);
   PrintPart("mask_decoder_pixel2_post_norm", parts.mask_decoder_pixel2_post_norm);
   PrintPart("memory_encoder", parts.memory_encoder);
