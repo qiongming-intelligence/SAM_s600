@@ -38,6 +38,12 @@ void ApplyPart(Sam3ModelPartPaths& parts, const std::string& key, const std::str
     parts.detector_taps = value;
   } else if (key == "detector_bridge_taps") {
     parts.detector_bridge_taps = value;
+  } else if (key == "detector_image_bridge_taps") {
+    parts.detector_image_bridge_taps = value;
+  } else if (key == "detector_text_bridge_tap") {
+    parts.detector_text_bridge_tap = value;
+  } else if (key == "detector_geometry_bridge_taps") {
+    parts.detector_geometry_bridge_taps = value;
   } else if (key == "detector_encoder_hidden_tap") {
     parts.detector_encoder_hidden_tap = value;
   } else if (key == "mask_decoder") {
@@ -70,6 +76,9 @@ void MergeConfig(Sam3Config& dst, const Sam3Config& src) {
   if (!s.detector.empty()) d.detector = s.detector;
   if (!s.detector_taps.empty()) d.detector_taps = s.detector_taps;
   if (!s.detector_bridge_taps.empty()) d.detector_bridge_taps = s.detector_bridge_taps;
+  if (!s.detector_image_bridge_taps.empty()) d.detector_image_bridge_taps = s.detector_image_bridge_taps;
+  if (!s.detector_text_bridge_tap.empty()) d.detector_text_bridge_tap = s.detector_text_bridge_tap;
+  if (!s.detector_geometry_bridge_taps.empty()) d.detector_geometry_bridge_taps = s.detector_geometry_bridge_taps;
   if (!s.detector_encoder_hidden_tap.empty()) d.detector_encoder_hidden_tap = s.detector_encoder_hidden_tap;
   if (!s.mask_decoder.empty()) d.mask_decoder = s.mask_decoder;
   if (!s.mask_decoder_pre_norm.empty()) d.mask_decoder_pre_norm = s.mask_decoder_pre_norm;
@@ -174,6 +183,9 @@ std::vector<Sam3ModelPart> ListSam3ModelParts(const Sam3Config& config) {
   append("detector", parts.detector);
   append("detector_taps", parts.detector_taps);
   append("detector_bridge_taps", parts.detector_bridge_taps);
+  append("detector_image_bridge_taps", parts.detector_image_bridge_taps);
+  append("detector_text_bridge_tap", parts.detector_text_bridge_tap);
+  append("detector_geometry_bridge_taps", parts.detector_geometry_bridge_taps);
   append("detector_encoder_hidden_tap", parts.detector_encoder_hidden_tap);
   append("mask_decoder", parts.mask_decoder);
   append("mask_decoder_pre_norm", parts.mask_decoder_pre_norm);

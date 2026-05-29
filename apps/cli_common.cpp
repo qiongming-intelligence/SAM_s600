@@ -217,6 +217,9 @@ void PrintManifest(const sam_s600::Sam3Manifest& manifest, const std::string& mo
   PrintPart("detector", parts.detector);
   PrintPart("detector_taps", parts.detector_taps);
   PrintPart("detector_bridge_taps", parts.detector_bridge_taps);
+  PrintPart("detector_image_bridge_taps", parts.detector_image_bridge_taps);
+  PrintPart("detector_text_bridge_tap", parts.detector_text_bridge_tap);
+  PrintPart("detector_geometry_bridge_taps", parts.detector_geometry_bridge_taps);
   PrintPart("detector_encoder_hidden_tap", parts.detector_encoder_hidden_tap);
   PrintPart("mask_decoder", parts.mask_decoder);
   PrintPart("mask_decoder_pre_norm", parts.mask_decoder_pre_norm);

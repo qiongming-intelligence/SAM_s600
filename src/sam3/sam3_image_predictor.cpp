@@ -113,7 +113,8 @@ bool IsMaskDecoderStage(const std::string& stage_name) {
 
 bool CanSynthesizeSam3BridgeTensor(const std::string& stage_name, const std::string& name) {
   if (stage_name == "detector_taps" || stage_name == "detector_bridge_taps" ||
-      stage_name == "detector_encoder_hidden_tap") {
+      stage_name == "detector_image_bridge_taps" || stage_name == "detector_text_bridge_tap" ||
+      stage_name == "detector_geometry_bridge_taps" || stage_name == "detector_encoder_hidden_tap") {
     return name == "input_ids" || name == "attention_mask" || name == "input_boxes" ||
            name == "input_boxes_labels" || name == "geometry_roi_features";
   }
@@ -422,6 +423,21 @@ Sam3ImageResult Sam3ImagePredictor::Predict(const Image& image, const Sam3Prompt
   } else {
     if (const auto* detector_bridge_taps = model_.FindPart("detector_bridge_taps")) {
       detector_tap_outputs = RunStageFromSources(*detector_bridge_taps, "detector_bridge_taps", tap_sources);
+    } else {
+      const char* micro_tap_names[] = {
+          "detector_image_bridge_taps",
+          "detector_text_bridge_tap",
+          "detector_geometry_bridge_taps",
+      };
+      for (const auto* micro_tap_name : micro_tap_names) {
+        if (const auto* micro_tap = model_.FindPart(micro_tap_name)) {
+          auto micro_tap_outputs = RunStageFromSources(*micro_tap, micro_tap_name, tap_sources);
+          for (auto& output : micro_tap_outputs) {
+            detector_tap_outputs.push_back(std::move(output));
+          }
+          AppendTensorRefs(tap_sources, detector_tap_outputs);
+        }
+      }
     }
     if (const auto* detector_encoder_hidden_tap = model_.FindPart("detector_encoder_hidden_tap")) {
       AppendTensorRefs(tap_sources, detector_tap_outputs);
