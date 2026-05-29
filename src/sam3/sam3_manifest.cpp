@@ -36,6 +36,10 @@ void ApplyPart(Sam3ModelPartPaths& parts, const std::string& key, const std::str
     parts.detector = value;
   } else if (key == "detector_taps") {
     parts.detector_taps = value;
+  } else if (key == "detector_bridge_taps") {
+    parts.detector_bridge_taps = value;
+  } else if (key == "detector_encoder_hidden_tap") {
+    parts.detector_encoder_hidden_tap = value;
   } else if (key == "mask_decoder") {
     parts.mask_decoder = value;
   } else if (key == "mask_decoder_pre_norm") {
@@ -65,6 +69,8 @@ void MergeConfig(Sam3Config& dst, const Sam3Config& src) {
   if (!s.geometry_encoder.empty()) d.geometry_encoder = s.geometry_encoder;
   if (!s.detector.empty()) d.detector = s.detector;
   if (!s.detector_taps.empty()) d.detector_taps = s.detector_taps;
+  if (!s.detector_bridge_taps.empty()) d.detector_bridge_taps = s.detector_bridge_taps;
+  if (!s.detector_encoder_hidden_tap.empty()) d.detector_encoder_hidden_tap = s.detector_encoder_hidden_tap;
   if (!s.mask_decoder.empty()) d.mask_decoder = s.mask_decoder;
   if (!s.mask_decoder_pre_norm.empty()) d.mask_decoder_pre_norm = s.mask_decoder_pre_norm;
   if (!s.mask_decoder_post_norm.empty()) d.mask_decoder_post_norm = s.mask_decoder_post_norm;
@@ -167,6 +173,8 @@ std::vector<Sam3ModelPart> ListSam3ModelParts(const Sam3Config& config) {
   append("geometry_encoder", parts.geometry_encoder);
   append("detector", parts.detector);
   append("detector_taps", parts.detector_taps);
+  append("detector_bridge_taps", parts.detector_bridge_taps);
+  append("detector_encoder_hidden_tap", parts.detector_encoder_hidden_tap);
   append("mask_decoder", parts.mask_decoder);
   append("mask_decoder_pre_norm", parts.mask_decoder_pre_norm);
   append("mask_decoder_post_norm", parts.mask_decoder_post_norm);

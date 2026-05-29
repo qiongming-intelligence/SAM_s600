@@ -112,7 +112,8 @@ bool IsMaskDecoderStage(const std::string& stage_name) {
 }
 
 bool CanSynthesizeSam3BridgeTensor(const std::string& stage_name, const std::string& name) {
-  if (stage_name == "detector_taps") {
+  if (stage_name == "detector_taps" || stage_name == "detector_bridge_taps" ||
+      stage_name == "detector_encoder_hidden_tap") {
     return name == "input_ids" || name == "attention_mask" || name == "input_boxes" ||
            name == "input_boxes_labels" || name == "geometry_roi_features";
   }
@@ -412,12 +413,25 @@ Sam3ImageResult Sam3ImagePredictor::Predict(const Image& image, const Sam3Prompt
   image_encoder.Infer(image_inputs, image_outputs);
 
   std::vector<BpuTensorBuffer> detector_tap_outputs;
+  auto tap_sources = TensorRefs(image_inputs);
+  AppendTensorRefs(tap_sources, image_outputs);
+  AppendTensorRefs(tap_sources, text_outputs);
+  AppendTensorRefs(tap_sources, geometry_outputs);
   if (const auto* detector_taps = model_.FindPart("detector_taps")) {
-    auto tap_sources = TensorRefs(image_inputs);
-    AppendTensorRefs(tap_sources, image_outputs);
-    AppendTensorRefs(tap_sources, text_outputs);
-    AppendTensorRefs(tap_sources, geometry_outputs);
     detector_tap_outputs = RunStageFromSources(*detector_taps, "detector_taps", tap_sources);
+  } else {
+    if (const auto* detector_bridge_taps = model_.FindPart("detector_bridge_taps")) {
+      detector_tap_outputs = RunStageFromSources(*detector_bridge_taps, "detector_bridge_taps", tap_sources);
+    }
+    if (const auto* detector_encoder_hidden_tap = model_.FindPart("detector_encoder_hidden_tap")) {
+      AppendTensorRefs(tap_sources, detector_tap_outputs);
+      auto encoder_tap_outputs = RunStageFromSources(*detector_encoder_hidden_tap,
+                                                     "detector_encoder_hidden_tap",
+                                                     tap_sources);
+      for (auto& output : encoder_tap_outputs) {
+        detector_tap_outputs.push_back(std::move(output));
+      }
+    }
   }
 
   auto detector_sources = TensorRefs(image_outputs);
