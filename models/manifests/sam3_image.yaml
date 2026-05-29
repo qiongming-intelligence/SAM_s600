@@ -5,5 +5,6 @@ parts:
   text_encoder: models/hbm/sam3_text_encoder.hbm
   geometry_encoder: models/hbm/sam3_geometry_encoder.hbm
   detector: models/hbm/sam3_detector.hbm
+  detector_text_bridge_tap: models/hbm/sam3_detector_text_bridge_tap.hbm
   mask_decoder_pre_norm: models/hbm/sam3_mask_decoder_pre_norm_full.hbm
   mask_decoder_post_norm: models/hbm/sam3_mask_decoder_post_norm_semantic.hbm
