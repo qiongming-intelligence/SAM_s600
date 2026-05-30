@@ -411,6 +411,7 @@ def main() -> int:
         cut_shapes = parse_named_shapes(args.cut_input)
         cut_graph_inputs(model, cut_shapes)
         print(f"cut graph inputs: {len(cut_shapes)}")
+    prune_graph(model)
     save_model(model, args.output_onnx)
     onnx.checker.check_model(str(args.output_onnx))
     update_contract(contract, model, args.output_onnx, args.out_contract)

@@ -26,7 +26,10 @@ struct Sam3Object {
 };
 
 struct Sam3ImageResult {
+  float presence_logit{0.0F};
+  float presence_score{0.0F};
   std::vector<Sam3Object> objects;
+  std::vector<Sam3Object> candidates;
 };
 
 struct Sam3VideoFrameResult {

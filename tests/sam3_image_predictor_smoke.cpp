@@ -17,7 +17,8 @@ int main() {
     (void)predictor.Predict(image, sam_s600::Sam3Prompt{});
   } catch (const std::runtime_error& error) {
     const std::string message = error.what();
-    if (message.find("missing required SAM3 model part: image_encoder") != std::string::npos) {
+    if (message.find("missing required SAM3 model part: image_encoder") != std::string::npos ||
+        message.find("missing required SAM3 model part: detector") != std::string::npos) {
       return 0;
     }
     return 1;

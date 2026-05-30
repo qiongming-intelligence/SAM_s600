@@ -1,0 +1,4 @@
+name: sam3_image_resident_bf16
+version: pre-alpha
+parts:
+  detector: models/hbm/sam3_detector_hbdk_full_bf16.hbm

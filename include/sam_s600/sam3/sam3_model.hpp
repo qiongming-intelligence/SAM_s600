@@ -27,6 +27,8 @@ class Sam3Model {
   explicit Sam3Model(Sam3Config config = {}, BpuRuntimeOptions runtime = {});
 
   void Load(bool require_all = false);
+  void LoadParts(const std::vector<std::string>& names, bool require = true);
+  void LoadPart(const std::string& name, bool require = true);
   void Reset();
 
   [[nodiscard]] const Sam3Config& Config() const;
