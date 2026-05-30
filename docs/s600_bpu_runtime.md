@@ -29,11 +29,11 @@ The command prints the model name, compile-time BPU core count, input tensor met
 Use `--load-parts` to make a SAM3 CLI load every existing HBM partition referenced by a manifest and report per-part status:
 
 ```bash
-sam3_benchmark --manifest models/manifests/sam3_full.yaml --load-parts
+sam3_benchmark --manifest configs/manifests/sam3_full.yaml --load-parts
 ```
 
 Use `--require-all` when every partition must be present and loadable:
 
 ```bash
-sam3_benchmark --manifest models/manifests/sam3_full.yaml --load-parts --require-all
+sam3_benchmark --manifest configs/manifests/sam3_full.yaml --load-parts --require-all
 ```

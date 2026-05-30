@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sam-s600-tools"
+version = "0.1.0"
+description = "SAM3 export, conversion, manifest, and benchmark tooling for S600"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "onnx",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sam_s600_tools*"]

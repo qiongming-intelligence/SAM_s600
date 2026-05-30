@@ -3,5 +3,5 @@
 Planned command:
 
 ```bash
-sam3_image --image assets/images/demo.jpg --exemplar assets/images/exemplar.jpg
+sam3_image --image examples/assets/demo.jpg --exemplar assets/images/exemplar.jpg
 ```

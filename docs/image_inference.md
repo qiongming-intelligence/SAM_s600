@@ -11,7 +11,7 @@ Supported CLI request fields are in place for the SAM3 image modes:
 Example commands:
 
 ```bash
-sam3_image --image input.jpg --text "person" --manifest models/manifests/sam3_image.yaml
+sam3_image --image input.jpg --text "person" --manifest configs/manifests/sam3_image.yaml
 sam3_image_interactive --image input.jpg --point 120,240,1 --box 10,20,300,400
 sam3_image --image input.jpg --mask prompt_mask.png --exemplar exemplar.jpg
 ```
@@ -19,7 +19,7 @@ sam3_image --image input.jpg --mask prompt_mask.png --exemplar exemplar.jpg
 Use `--run` to invoke the C++ image predictor from the CLI:
 
 ```bash
-sam3_image --manifest models/manifests/sam3_image.yaml --image encoder_input.bin --run
+sam3_image --manifest configs/manifests/sam3_image.yaml --image encoder_input.bin --run
 ```
 
 `encoder_input.bin` is a raw byte stream that must already match the converted image encoder HBM input tensors. Decoded JPG/PNG preprocessing will be added once the SAM3 image encoder export contract is finalized.

@@ -1,6 +1,7 @@
 # Build artifacts
 build/
 build-*/
+build*/
 cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
@@ -9,11 +10,11 @@ compile_commands.json
 # Generated models and weights
 *.hbm
 *.onnx
+*.onnx.data
 *.pt
 *.pth
 *.safetensors
-models/hbm/*
-!models/hbm/.gitkeep
+models/hbm/
 models/upstream/
 .toolchain_downloads/
 
@@ -34,6 +35,7 @@ __pycache__/
 *.pyc
 .venv/
 .env
+*.egg-info/
 
 # Editors
 .vscode/

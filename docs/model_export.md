@@ -47,15 +47,15 @@ conda run -n sam3-export huggingface-cli login
 Then download the authorized assets from Hugging Face:
 
 ```bash
-conda run -n sam3-export tools/download/download_sam3_weights.py --source huggingface --variant sam3 --out-dir models/upstream
-conda run -n sam3-export tools/download/download_sam3_weights.py --source huggingface --variant sam3.1 --out-dir models/upstream
+conda run -n sam3-export python3 -m sam_s600_tools.download.weights --source huggingface --variant sam3 --out-dir models/upstream
+conda run -n sam3-export python3 -m sam_s600_tools.download.weights --source huggingface --variant sam3.1 --out-dir models/upstream
 ```
 
 If Hugging Face access is gated for the current token, ModelScope can mirror the official `facebook/sam3` and `facebook/sam3.1` assets:
 
 ```bash
-conda run -n sam3-export tools/download/download_sam3_weights.py --source modelscope --variant sam3 --out-dir models/upstream
-conda run -n sam3-export tools/download/download_sam3_weights.py --source modelscope --variant sam3.1 --out-dir models/upstream
+conda run -n sam3-export python3 -m sam_s600_tools.download.weights --source modelscope --variant sam3 --out-dir models/upstream
+conda run -n sam3-export python3 -m sam_s600_tools.download.weights --source modelscope --variant sam3.1 --out-dir models/upstream
 ```
 
 Without an authorized Hugging Face token, Hugging Face returns `GatedRepoError 401`. ModelScope download was verified for `facebook/sam3` and `facebook/sam3.1` on this machine.
@@ -65,22 +65,22 @@ Without an authorized Hugging Face token, Hugging Face returns `GatedRepoError 4
 Generate contracts for all SAM3/SAM3.1 partitions:
 
 ```bash
-tools/export/sam3_export_contract.py --out-dir build/sam3_export --print-plan
+python3 -m sam_s600_tools.export.contract --out-dir build/sam3_export --print-plan
 ```
 
 Generate a subset through the per-partition wrappers:
 
 ```bash
-tools/export/export_sam3_image_encoder.py --out-dir build/sam3_export --print-plan
-tools/export/export_sam3_detector.py --out-dir build/sam3_export --print-plan
-tools/export/export_sam3_video_tracker.py --out-dir build/sam3_export --print-plan
-tools/export/export_sam3_multiplex.py --out-dir build/sam3_export --print-plan
+python3 -m sam_s600_tools.export.image_encoder --out-dir build/sam3_export --print-plan
+python3 -m sam_s600_tools.export.detector --out-dir build/sam3_export --print-plan
+python3 -m sam_s600_tools.export.video_tracker --out-dir build/sam3_export --print-plan
+python3 -m sam_s600_tools.export.multiplex --out-dir build/sam3_export --print-plan
 ```
 
 Optionally inspect a checkpoint if PyTorch is installed:
 
 ```bash
-tools/export/sam3_export_contract.py \
+python3 -m sam_s600_tools.export.contract \
   --checkpoint /path/to/authorized_sam3_checkpoint.pt \
   --inspect-checkpoint \
   --out-dir build/sam3_export
@@ -120,7 +120,7 @@ Run the adapter:
 
 ```bash
 PYTHONPATH=/path/to/upstream_sam3:$PYTHONPATH \
-  tools/export/export_sam3_onnx.py \
+  python3 -m sam_s600_tools.export.onnx \
   --model-factory my_sam3_factory:create_model \
   --checkpoint /path/to/authorized_sam3_checkpoint.pt \
   --model-config /path/to/upstream_config.yaml \
@@ -135,9 +135,9 @@ The adapter resolves each partition from the returned model using candidates rec
 For the official Transformers-format ModelScope download, use the built-in factory:
 
 ```bash
-PYTHONPATH=tools/export \
-  conda run -n sam3-export python tools/export/export_sam3_onnx.py \
-  --model-factory sam3_transformers_factory:create_model \
+PYTHONPATH=src/python \
+  conda run -n sam3-export python -m sam_s600_tools.export.onnx \
+  --model-factory sam_s600_tools.export.factories.transformers:create_model \
   --model-config models/upstream/modelscope/sam3 \
   --out-dir build/sam3_export \
   --partition image_encoder \
@@ -152,7 +152,7 @@ The default concrete export dimensions are conservative placeholders: image size
 After real ONNX files exist at the `onnx_path` values recorded in the contracts, convert them on an S600 toolchain host:
 
 ```bash
-tools/convert/convert_sam3_to_hbm.sh build/sam3_export/contracts models/hbm
+src/python/scripts/compile_hbm.sh build/sam3_export/contracts models/hbm
 ```
 
 The script expects `hb_mapper` in `PATH` and writes converted files into `models/hbm/`.
@@ -160,8 +160,8 @@ The script expects `hb_mapper` in `PATH` and writes converted files into `models
 Validate a converted HBM file:
 
 ```bash
-tools/convert/validate_hbm.sh models/hbm/sam3_image_encoder.hbm
-build-apps/sam3_image --inspect-part models/hbm/sam3_image_encoder.hbm
+src/python/scripts/validate_hbm.sh models/hbm/sam3_image_encoder.hbm
+build/sam3_image --inspect-part models/hbm/sam3_image_encoder.hbm
 ```
 
 ## Manifest generation
@@ -169,7 +169,7 @@ build-apps/sam3_image --inspect-part models/hbm/sam3_image_encoder.hbm
 Regenerate manifests from the expected HBM filenames:
 
 ```bash
-tools/convert/generate_model_manifest.py --hbm-dir models/hbm --out-dir models/manifests
+python3 -m sam_s600_tools.manifest.generate --hbm-dir models/hbm --out-dir configs/manifests
 ```
 
 Use `--require-existing` to fail if any expected HBM file is missing.

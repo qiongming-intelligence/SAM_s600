@@ -1,6 +1,6 @@
 # Models
 
-This directory stores model manifests and local placeholders.
+This directory stores local generated model files and upstream weights. Checked-in manifests live under `configs/manifests/`.
 
 SAM3 checkpoints, ONNX exports, and converted HBM files are not committed to this repository.
 
@@ -19,4 +19,4 @@ models/hbm/
   sam3_multiplex_tracker.hbm
 ```
 
-Generate export contracts with `tools/export/sam3_export_contract.py`, convert real ONNX exports with `tools/convert/convert_sam3_to_hbm.sh`, and regenerate manifests with `tools/convert/generate_model_manifest.py`.
+Generate export contracts with `python3 -m sam_s600_tools.export.contract`, convert real ONNX exports with `src/python/scripts/compile_hbm.sh`, and regenerate manifests with `python3 -m sam_s600_tools.manifest.generate`.

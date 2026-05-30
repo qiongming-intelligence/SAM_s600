@@ -24,10 +24,10 @@ sam3_camera --camera /dev/video0 --point 320,240,1
 Use `--run` to invoke the C++ video predictor from the CLI:
 
 ```bash
-sam3_video --manifest models/manifests/sam3_video.yaml --input frame0.bin --run
-sam3_video_tracking --manifest models/manifests/sam3_video.yaml --input raw_frames/ --box 10,20,300,400 --run
-sam3_multiplex_video --manifest models/manifests/sam3_multiplex.yaml --input frame0.bin --run
-sam3_multiplex_video --manifest models/manifests/sam3_multiplex.yaml --input raw_frames/ --text "person" --text "ball" --run
+sam3_video --manifest configs/manifests/sam3_video.yaml --input frame0.bin --run
+sam3_video_tracking --manifest configs/manifests/sam3_video.yaml --input raw_frames/ --box 10,20,300,400 --run
+sam3_multiplex_video --manifest configs/manifests/sam3_multiplex.yaml --input frame0.bin --run
+sam3_multiplex_video --manifest configs/manifests/sam3_multiplex.yaml --input raw_frames/ --text "person" --text "ball" --run
 ```
 
 For the current pre-alpha runtime, `--input` may be a single raw frame or a directory of raw frame files sorted by path. Each raw frame must already match the converted image encoder HBM input tensors. Decoded video demuxing and image-folder preprocessing will be added once the SAM3 video export contract is finalized.

@@ -3,5 +3,5 @@
 Planned command:
 
 ```bash
-sam3_image --image assets/images/demo.jpg --text "person" --manifest models/manifests/sam3_image.yaml
+sam3_image --image examples/assets/demo.jpg --text "person" --manifest configs/manifests/sam3_image.yaml
 ```

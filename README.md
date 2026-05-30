@@ -56,18 +56,16 @@ input image/video/prompt
   -> postprocess / visualization
 ```
 
-The BPU integration layer is isolated under `include/sam_s600/bpu` and `src/bpu` so the SAM3 API remains stable while model partitioning evolves.
+The BPU integration layer is isolated under `src/csrc/include/sam_s600/bpu` and `src/csrc/bpu` so the SAM3 API remains stable while model partitioning evolves.
 
 ## Repository layout
 
 ```text
-include/sam_s600/      Public C++ headers
-src/                   Runtime implementation
-apps/                  CLI demo and benchmark entry points
-tools/export/          SAM3 PyTorch/ONNX export helpers
-tools/convert/         S600 HBM conversion helpers
-tools/benchmark/       SAM3-only benchmark scripts
-models/                Model manifests; no upstream weights committed
+src/csrc/              C++ runtime, public headers, CLI, and binaries
+src/python/            SAM3 export, conversion, download, and benchmark tooling
+tests/csrc/            C++ smoke tests
+configs/manifests/     Checked-in model manifests
+models/                Local generated HBM files and upstream weights; not committed
 docs/                  Architecture, conversion, runtime, and performance docs
 examples/              SAM3 usage examples
 benchmarks/            SAM3-only benchmark reports
