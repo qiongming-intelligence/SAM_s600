@@ -79,19 +79,6 @@ input image, any resolution
 
 Non-square images are resized to a square. The benchmark path expects the final preprocessed tensor, not a raw JPG/PNG.
 
-## Repository layout
-
-```text
-src/csrc/              C++ runtime, public headers, CLI, and binaries
-src/python/            SAM3 export, conversion, download, compile, and benchmark tooling
-src/python/scripts/    HBM compile and S600 benchmark scripts
-configs/manifests/     Runtime manifests
-docs/                  Architecture, export, runtime, and performance docs
-tests/csrc/            C++ smoke tests
-models/                Local generated assets; not committed
-build/                 Build/export outputs; not committed
-```
-
 Generated models and licensed assets are ignored by git:
 
 ```text
